@@ -16,6 +16,16 @@ export const isConfiguredApi = (): boolean => {
 // =========================================================================
 let mockEvents: EventItem[] = [
   {
+    event_id: "EVT-QUIZ-CROSSWORD",
+    event_name: "UMANG 4.0 (Quiz & Crossword)",
+    source_sheet_id: "1l67P4UsLjSMcMzvwW9WkN6ONNuUKY5JoM-VCRwDeCBo",
+    source_tab_name: "944636428",
+    min_team_size: 2,
+    max_team_size: 4,
+    deadline: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
+    is_open: true,
+  },
+  {
     event_id: "EVT-BATTLE-OF-BANDS",
     event_name: "Battle of Bands (Rock & Fusion)",
     min_team_size: 3,
@@ -50,6 +60,13 @@ let mockEvents: EventItem[] = [
 ];
 
 let mockStudents: Record<string, Student[]> = {
+  "EVT-QUIZ-CROSSWORD": [
+    { name: "Pawan Kumar", roll: "21105128099", branch: "CSE", email_masked: "pk***@gmail.com" },
+    { name: "Prashant Kumar", roll: "21105128001", branch: "CSE", email_masked: "pr***@gmail.com" },
+    { name: "Ananya Sharma", roll: "21105128014", branch: "ECE", email_masked: "an***@gmail.com" },
+    { name: "Aman Raj", roll: "21105128033", branch: "EEE", email_masked: "am***@gmail.com" },
+    { name: "Kavita Sinha", roll: "21105128102", branch: "CSE", email_masked: "ka***@gmail.com" },
+  ],
   "EVT-BATTLE-OF-BANDS": [
     { name: "Prashant Kumar", roll: "21105128001", branch: "CSE", email_masked: "pr***@gmail.com" },
     { name: "Ananya Sharma", roll: "21105128014", branch: "ECE", email_masked: "an***@gmail.com" },

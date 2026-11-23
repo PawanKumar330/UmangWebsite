@@ -71,6 +71,10 @@ export default function AdminPage() {
   const [savingEvent, setSavingEvent] = useState(false);
   const [eventModalMsg, setEventModalMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // Source Sheet Inspection state
+  const [inspectingSheet, setInspectingSheet] = useState(false);
+  const [inspectResult, setInspectResult] = useState<any | null>(null);
+
   // Password Reset state
   const [resetCaptainEmail, setResetCaptainEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
@@ -146,9 +150,53 @@ export default function AdminPage() {
     setAdminToken(null);
   };
 
+  // Inspect Source Sheet
+  const handleInspectSheet = async () => {
+    if (!adminToken || !eventFormData.source_sheet_id.trim()) {
+      setEventModalMsg({ type: "error", text: "Please enter a Source Sheet ID or Google Sheets URL." });
+      return;
+    }
+
+    setInspectingSheet(true);
+    setInspectResult(null);
+    setEventModalMsg(null);
+
+    try {
+      const res = await callApi({
+        action: "adminInspectSourceSheet",
+        token: adminToken,
+        source_sheet_id: eventFormData.source_sheet_id.trim(),
+        source_tab_name: eventFormData.source_tab_name.trim(),
+      });
+
+      if (res.ok && res.data) {
+        setInspectResult(res.data);
+      } else {
+        setEventModalMsg({ type: "error", text: res.error || "Failed to inspect sheet." });
+      }
+    } catch (err: any) {
+      setEventModalMsg({ type: "error", text: err.message || "Failed to connect to sheet." });
+    } finally {
+      setInspectingSheet(false);
+    }
+  };
+
+  const handleSourceSheetInput = (val: string) => {
+    // Check if full Google Sheets URL
+    const matchId = val.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    const matchGid = val.match(/[?&#]gid=([0-9]+)/);
+
+    setEventFormData((prev) => ({
+      ...prev,
+      source_sheet_id: matchId ? matchId[1] : val,
+      source_tab_name: matchGid ? matchGid[1] : prev.source_tab_name,
+    }));
+  };
+
   // Open Event Modal for Create or Edit
   const openEventModal = (evt?: EventItem) => {
     setEventModalMsg(null);
+    setInspectResult(null);
     if (evt) {
       setEditingEventId(evt.event_id);
       setEventFormData({
@@ -839,37 +887,108 @@ export default function AdminPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                    Source Google Sheet ID
+                    Source Google Sheet ID or URL
                   </label>
                   <input
                     type="text"
-                    placeholder="1A2B3C4D5E6F..."
+                    placeholder="Paste ID or full Google Sheet URL..."
                     value={eventFormData.source_sheet_id}
-                    onChange={(e) =>
-                      setEventFormData({ ...eventFormData, source_sheet_id: e.target.value })
-                    }
+                    onChange={(e) => handleSourceSheetInput(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-xs font-mono"
                   />
                   <p className="text-[10px] text-slate-400">
-                    ID from the Google Form response spreadsheet URL.
+                    Paste ID or full URL (e.g. https://docs.google.com/spreadsheets/d/.../edit?gid=...)
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                    Tab Name
+                    Tab Name or GID
                   </label>
                   <input
                     type="text"
-                    placeholder="Form Responses 1"
+                    placeholder="Form Responses 1 or GID (e.g. 944636428)"
                     value={eventFormData.source_tab_name}
                     onChange={(e) =>
                       setEventFormData({ ...eventFormData, source_tab_name: e.target.value })
                     }
                     className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-xs font-medium"
                   />
+                  <p className="text-[10px] text-slate-400">
+                    Tab title or numeric GID from sheet URL.
+                  </p>
                 </div>
               </div>
+
+              {/* Inspect / Test Sheet Button */}
+              {eventFormData.source_sheet_id && (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleInspectSheet}
+                    disabled={inspectingSheet}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition"
+                  >
+                    {inspectingSheet ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-festive-maroon-700" />
+                        Testing Connection to Sheet...
+                      </>
+                    ) : (
+                      <>
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                        Test Sheet Connection & Verify Columns
+                      </>
+                    )}
+                  </button>
+
+                  {/* Inspection Results Box */}
+                  {inspectResult && (
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2 animate-in fade-in">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                        <span className="font-bold text-slate-800">
+                          {inspectResult.spreadsheet_title || "Sheet Connected"}
+                        </span>
+                        <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
+                          {inspectResult.total_students_found} Student Records Found
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-400">Name Column:</span>{" "}
+                          <strong className="text-slate-800">{inspectResult.detected_mapping?.name_column}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Roll Column:</span>{" "}
+                          <strong className="text-slate-800">{inspectResult.detected_mapping?.roll_column}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Email Column:</span>{" "}
+                          <strong className="text-slate-800">{inspectResult.detected_mapping?.email_column}</strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400">Branch Column:</span>{" "}
+                          <strong className="text-slate-800">{inspectResult.detected_mapping?.branch_column}</strong>
+                        </div>
+                      </div>
+
+                      {inspectResult.sample_students && inspectResult.sample_students.length > 0 && (
+                        <div className="pt-1 border-t border-slate-200">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Sample Parsed Rows:</span>
+                          <div className="space-y-1 mt-1">
+                            {inspectResult.sample_students.map((st: any, i: number) => (
+                              <div key={i} className="text-[11px] text-slate-600 bg-white p-1.5 rounded border border-slate-200">
+                                <strong>{st.name}</strong> • Roll: <code>{st.roll}</code> • {st.branch}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">

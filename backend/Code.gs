@@ -171,6 +171,9 @@ function doPost(e) {
       case "adminPostNotice":
         result = handleAdminPostNotice(payload);
         break;
+      case "adminInspectSourceSheet":
+        result = handleAdminInspectSourceSheet(payload);
+        break;
 
       default:
         result = { ok: false, error: "Unknown action: " + action };
@@ -1174,13 +1177,34 @@ function handleAdminPostNotice(payload) {
 // =========================================================================
 
 /**
+ * Extracts clean Google Spreadsheet ID and GID from either raw ID or full Google Docs URL
+ */
+function extractSheetIdAndGid(input) {
+  if (!input) return { sheetId: "", gid: null };
+  const str = String(input).trim();
+  
+  // Check if full URL
+  const matchId = str.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  const sheetId = matchId ? matchId[1] : str.split("/")[0].split("?")[0].trim();
+  
+  const matchGid = str.match(/[?&#]gid=([0-9]+)/);
+  const gid = matchGid ? matchGid[1] : null;
+
+  return { sheetId: sheetId, gid: gid };
+}
+
+/**
  * Reads and caches student rows from an event's Google Form source sheet.
  * Matches columns dynamically based on CONFIG.SOURCE_COLUMNS aliases.
  */
-function getSourceSheetStudents(sheetId, tabName) {
+function getSourceSheetStudents(sheetIdOrUrl, tabNameOrGid) {
+  const parsed = extractSheetIdAndGid(sheetIdOrUrl);
+  const sheetId = parsed.sheetId;
   if (!sheetId) return [];
 
-  const tab = tabName || "Form Responses 1";
+  const targetGid = parsed.gid || (tabNameOrGid && /^[0-9]+$/.test(String(tabNameOrGid).trim()) ? String(tabNameOrGid).trim() : null);
+  const tab = tabNameOrGid && !targetGid ? String(tabNameOrGid).trim() : (targetGid ? "gid_" + targetGid : "default_tab");
+  
   const cacheKey = "src_sheet_" + sheetId + "_" + tab.replace(/\s+/g, "_");
   const cache = CacheService.getScriptCache();
   const cachedJson = cache.get(cacheKey);
@@ -1197,12 +1221,45 @@ function getSourceSheetStudents(sheetId, tabName) {
   try {
     sourceSs = SpreadsheetApp.openById(sheetId);
   } catch (err) {
-    throw new Error("Unable to open source sheet (" + sheetId + "). Ensure the Apps Script has access or Sheet ID is correct.");
+    throw new Error("Unable to open source sheet ID (" + sheetId + "). Ensure the Apps Script has access or Sheet ID is correct.");
   }
 
-  let sheet = sourceSs.getSheetByName(tab);
+  let sheet = null;
+
+  // 1. If target GID specified, find sheet by getSheetId()
+  if (targetGid) {
+    const allSheets = sourceSs.getSheets();
+    for (let i = 0; i < allSheets.length; i++) {
+      if (String(allSheets[i].getSheetId()) === targetGid) {
+        sheet = allSheets[i];
+        break;
+      }
+    }
+  }
+
+  // 2. Try by exact name
+  if (!sheet && tabNameOrGid) {
+    sheet = sourceSs.getSheetByName(tabNameOrGid);
+  }
+
+  // 3. Try case-insensitive tab match or looking for 'responses' in name
   if (!sheet) {
-    // If specified tab not found, fallback to first sheet
+    const allSheets = sourceSs.getSheets();
+    for (let i = 0; i < allSheets.length; i++) {
+      const sName = allSheets[i].getName().toLowerCase();
+      if (tabNameOrGid && sName === String(tabNameOrGid).toLowerCase()) {
+        sheet = allSheets[i];
+        break;
+      }
+      if (sName.includes("response") || sName.includes("form") || sName.includes("quiz")) {
+        sheet = allSheets[i];
+        break;
+      }
+    }
+  }
+
+  // 4. Fallback to first sheet
+  if (!sheet) {
     sheet = sourceSs.getSheets()[0];
   }
   if (!sheet) return [];
@@ -1211,22 +1268,28 @@ function getSourceSheetStudents(sheetId, tabName) {
   if (data.length <= 1) return [];
 
   // Match column indices using configured aliases
-  const headers = data[0].map(h => normalizeString(h));
-  const colIndices = resolveColumnIndices(headers);
+  const rawHeaders = data[0].map(h => String(h || ""));
+  const colIndices = resolveColumnIndices(rawHeaders);
 
   const students = [];
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    const name = colIndices.nameIdx !== -1 ? String(row[colIndices.nameIdx] || "").trim() : "";
-    const roll = colIndices.rollIdx !== -1 ? String(row[colIndices.rollIdx] || "").trim() : "";
-    const email = colIndices.emailIdx !== -1 ? String(row[colIndices.emailIdx] || "").trim() : "";
-    const branch = colIndices.branchIdx !== -1 ? String(row[colIndices.branchIdx] || "").trim() : "";
 
-    if (roll || email) {
+    let name = colIndices.nameIdx !== -1 ? String(row[colIndices.nameIdx] != null ? row[colIndices.nameIdx] : "").trim() : "";
+    let roll = colIndices.rollIdx !== -1 ? String(row[colIndices.rollIdx] != null ? row[colIndices.rollIdx] : "").trim() : "";
+    let email = colIndices.emailIdx !== -1 ? String(row[colIndices.emailIdx] != null ? row[colIndices.emailIdx] : "").trim() : "";
+    let branch = colIndices.branchIdx !== -1 ? String(row[colIndices.branchIdx] != null ? row[colIndices.branchIdx] : "").trim() : "";
+
+    // Clean up float decimals like 21105128001.0
+    if (roll.endsWith(".0")) {
+      roll = roll.substring(0, roll.length - 2);
+    }
+
+    if (roll || email || name) {
       students.push({
-        name: name || "Student",
-        roll: roll,
-        email: email,
+        name: name || "Participant",
+        roll: roll || "",
+        email: email || "",
         branch: branch || "MCE"
       });
     }
@@ -1243,50 +1306,159 @@ function getSourceSheetStudents(sheetId, tabName) {
 }
 
 /**
- * Resolves column positions for Name, Roll No, Email, Branch using aliases
+ * Resolves column positions for Name, Roll No, Email, Branch using flexible keyword matching
  */
-function resolveColumnIndices(headers) {
+function resolveColumnIndices(rawHeaders) {
   const result = { nameIdx: -1, rollIdx: -1, emailIdx: -1, branchIdx: -1 };
+  const headers = rawHeaders.map(h => normalizeString(h));
 
   for (let i = 0; i < headers.length; i++) {
-    const header = headers[i];
+    const h = headers[i];
+    if (!h) continue;
 
-    // Check Roll
-    if (result.rollIdx === -1 && matchesAnyAlias(header, CONFIG.SOURCE_COLUMNS.ROLL)) {
-      result.rollIdx = i;
+    // Never match Timestamp, Score, or Date columns
+    if (h.includes("timestamp") || h.includes("time stamp") || h.includes("score") || h.includes("serial") || h.includes("s.no")) {
       continue;
     }
-    // Check Email
-    if (result.emailIdx === -1 && matchesAnyAlias(header, CONFIG.SOURCE_COLUMNS.EMAIL)) {
-      result.emailIdx = i;
-      continue;
+
+    // 1. Roll Number Match:
+    if (result.rollIdx === -1) {
+      if (
+        h.includes("roll") ||
+        h.includes("reg no") ||
+        h.includes("reg. no") ||
+        h.includes("registration") ||
+        h.includes("enrollment") ||
+        h.includes("university roll") ||
+        h.includes("college roll") ||
+        h.includes("class roll") ||
+        h === "reg"
+      ) {
+        result.rollIdx = i;
+        continue;
+      }
     }
-    // Check Name
-    if (result.nameIdx === -1 && matchesAnyAlias(header, CONFIG.SOURCE_COLUMNS.NAME)) {
-      result.nameIdx = i;
-      continue;
+
+    // 2. Email Match:
+    if (result.emailIdx === -1) {
+      if (h.includes("email") || h.includes("mail") || h.includes("gmail") || h.includes("e-mail")) {
+        result.emailIdx = i;
+        continue;
+      }
     }
-    // Check Branch
-    if (result.branchIdx === -1 && matchesAnyAlias(header, CONFIG.SOURCE_COLUMNS.BRANCH)) {
-      result.branchIdx = i;
-      continue;
+
+    // 3. Name Match:
+    if (result.nameIdx === -1) {
+      if (
+        h.includes("name") &&
+        !h.includes("college") &&
+        !h.includes("event") &&
+        !h.includes("team") &&
+        !h.includes("father") &&
+        !h.includes("dept")
+      ) {
+        result.nameIdx = i;
+        continue;
+      }
+    }
+
+    // 4. Branch / Department Match:
+    if (result.branchIdx === -1) {
+      if (
+        h.includes("branch") ||
+        h.includes("dept") ||
+        h.includes("department") ||
+        h.includes("stream") ||
+        h.includes("course") ||
+        h.includes("semester")
+      ) {
+        result.branchIdx = i;
+        continue;
+      }
     }
   }
 
-  // Fallbacks if not matched
-  if (result.rollIdx === -1) result.rollIdx = 1;
-  if (result.nameIdx === -1) result.nameIdx = 0;
-  if (result.emailIdx === -1) result.emailIdx = 2;
-  if (result.branchIdx === -1) result.branchIdx = 3;
+  // Fallbacks if not detected by keywords
+  // Typically in Google Forms:
+  // Col 0 = Timestamp
+  // Col 1 = Name or Email
+  // Col 2 = Roll or Email
+  if (result.nameIdx === -1) {
+    for (let i = 0; i < headers.length; i++) {
+      if (i !== result.rollIdx && i !== result.emailIdx && i !== result.branchIdx && !headers[i].includes("time")) {
+        result.nameIdx = i;
+        break;
+      }
+    }
+  }
 
   return result;
 }
 
-function matchesAnyAlias(header, aliases) {
-  for (let i = 0; i < aliases.length; i++) {
-    if (header.includes(normalizeString(aliases[i]))) return true;
+/**
+ * Diagnostic action for Admin to inspect and verify any Google Form source sheet
+ */
+function handleAdminInspectSourceSheet(payload) {
+  const token = payload.token || "";
+  const auth = verifySessionToken(token, "admin");
+  if (!auth.valid) return { ok: false, error: "Admin unauthorized." };
+
+  const parsed = extractSheetIdAndGid(payload.source_sheet_id);
+  const sheetId = parsed.sheetId;
+  const tabName = payload.source_tab_name;
+
+  if (!sheetId) return { ok: false, error: "Source Sheet ID or URL is required." };
+
+  try {
+    const ss = SpreadsheetApp.openById(sheetId);
+    const sheetsList = ss.getSheets().map(s => ({
+      name: s.getName(),
+      gid: String(s.getSheetId()),
+      rows: s.getLastRow(),
+      cols: s.getLastColumn()
+    }));
+
+    const students = getSourceSheetStudents(sheetId, tabName);
+    let sampleHeaders = [];
+    let detectedMapping = {};
+
+    let targetSheet = null;
+    if (parsed.gid) {
+      targetSheet = ss.getSheets().find(s => String(s.getSheetId()) === parsed.gid);
+    }
+    if (!targetSheet && tabName) {
+      targetSheet = ss.getSheetByName(tabName);
+    }
+    if (!targetSheet) targetSheet = ss.getSheets()[0];
+
+    if (targetSheet && targetSheet.getLastRow() >= 1) {
+      const headerRow = targetSheet.getRange(1, 1, 1, targetSheet.getLastColumn()).getValues()[0];
+      sampleHeaders = headerRow.map(h => String(h || ""));
+      const mapping = resolveColumnIndices(sampleHeaders);
+      detectedMapping = {
+        name_column: mapping.nameIdx !== -1 ? `${sampleHeaders[mapping.nameIdx]} (Col ${mapping.nameIdx + 1})` : "Not Found",
+        roll_column: mapping.rollIdx !== -1 ? `${sampleHeaders[mapping.rollIdx]} (Col ${mapping.rollIdx + 1})` : "Not Found",
+        email_column: mapping.emailIdx !== -1 ? `${sampleHeaders[mapping.emailIdx]} (Col ${mapping.emailIdx + 1})` : "Not Found",
+        branch_column: mapping.branchIdx !== -1 ? `${sampleHeaders[mapping.branchIdx]} (Col ${mapping.branchIdx + 1})` : "Not Found",
+      };
+    }
+
+    return {
+      ok: true,
+      data: {
+        spreadsheet_title: ss.getName(),
+        sheets: sheetsList,
+        target_sheet_name: targetSheet ? targetSheet.getName() : "None",
+        target_sheet_gid: targetSheet ? String(targetSheet.getSheetId()) : "",
+        headers_found: sampleHeaders,
+        detected_mapping: detectedMapping,
+        total_students_found: students.length,
+        sample_students: students.slice(0, 3)
+      }
+    };
+  } catch (err) {
+    return { ok: false, error: "Failed to open or inspect sheet: " + err.message };
   }
-  return false;
 }
 
 // =========================================================================
@@ -1686,6 +1858,17 @@ function setupInitialPortalDb() {
     const futureDate1 = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const futureDate2 = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
     const futureDate3 = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    eventsSheet.appendRow([
+      "EVT-QUIZ-CROSSWORD",
+      "UMANG 4.0 (Quiz & Crossword)",
+      "1l67P4UsLjSMcMzvwW9WkN6ONNuUKY5JoM-VCRwDeCBo",
+      "944636428",
+      2,
+      4,
+      futureDate1,
+      "TRUE"
+    ]);
 
     eventsSheet.appendRow([
       "EVT-BATTLE-OF-BANDS",
