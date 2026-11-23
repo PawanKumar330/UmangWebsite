@@ -4,9 +4,8 @@ out/
 build/
 node_modules/
 
-# Env files
+# Env files (local overrides only)
 .env*.local
-.env
 
 # Logs & temp
 *.log

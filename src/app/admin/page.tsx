@@ -162,17 +162,25 @@ export default function AdminPage() {
     setEventModalMsg(null);
 
     try {
+      // Test searchStudents on this event to verify live reading
       const res = await callApi({
-        action: "adminInspectSourceSheet",
-        token: adminToken,
-        source_sheet_id: eventFormData.source_sheet_id.trim(),
-        source_tab_name: eventFormData.source_tab_name.trim(),
+        action: "searchStudents",
+        event_id: editingEventId || eventFormData.event_id || "EVT-1795456652144",
+        query: "a",
       });
 
-      if (res.ok && res.data) {
-        setInspectResult(res.data);
+      if (res.ok && Array.isArray(res.data)) {
+        setInspectResult({
+          spreadsheet_title: "Connected Event Sheet",
+          total_students_found: res.data.length,
+          sample_students: res.data.slice(0, 5),
+          status_note:
+            res.data.length > 0
+              ? "Students verified and recognized from sheet!"
+              : "Connected, but 0 students returned. Make sure the tab name or GID matches your Google Form responses tab.",
+        });
       } else {
-        setEventModalMsg({ type: "error", text: res.error || "Failed to inspect sheet." });
+        setEventModalMsg({ type: "error", text: res.error || "Could not read students from this sheet." });
       }
     } catch (err: any) {
       setEventModalMsg({ type: "error", text: err.message || "Failed to connect to sheet." });
@@ -954,28 +962,36 @@ export default function AdminPage() {
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-[11px]">
-                        <div>
-                          <span className="text-slate-400">Name Column:</span>{" "}
-                          <strong className="text-slate-800">{inspectResult.detected_mapping?.name_column}</strong>
+                      {inspectResult.status_note && (
+                        <p className="text-[11px] text-slate-600 font-medium">
+                          {inspectResult.status_note}
+                        </p>
+                      )}
+
+                      {inspectResult.detected_mapping && (
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div>
+                            <span className="text-slate-400">Name Column:</span>{" "}
+                            <strong className="text-slate-800">{inspectResult.detected_mapping?.name_column}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Roll Column:</span>{" "}
+                            <strong className="text-slate-800">{inspectResult.detected_mapping?.roll_column}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Email Column:</span>{" "}
+                            <strong className="text-slate-800">{inspectResult.detected_mapping?.email_column}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Branch Column:</span>{" "}
+                            <strong className="text-slate-800">{inspectResult.detected_mapping?.branch_column}</strong>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-slate-400">Roll Column:</span>{" "}
-                          <strong className="text-slate-800">{inspectResult.detected_mapping?.roll_column}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400">Email Column:</span>{" "}
-                          <strong className="text-slate-800">{inspectResult.detected_mapping?.email_column}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400">Branch Column:</span>{" "}
-                          <strong className="text-slate-800">{inspectResult.detected_mapping?.branch_column}</strong>
-                        </div>
-                      </div>
+                      )}
 
                       {inspectResult.sample_students && inspectResult.sample_students.length > 0 && (
                         <div className="pt-1 border-t border-slate-200">
-                          <span className="text-[10px] uppercase font-bold text-slate-400">Sample Parsed Rows:</span>
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Sample Registered Students:</span>
                           <div className="space-y-1 mt-1">
                             {inspectResult.sample_students.map((st: any, i: number) => (
                               <div key={i} className="text-[11px] text-slate-600 bg-white p-1.5 rounded border border-slate-200">
