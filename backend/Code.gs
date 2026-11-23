@@ -360,7 +360,16 @@ function handleRegisterTeam(payload) {
       return { ok: false, error: "You are not registered for this event. Fill the individual form first." };
     }
 
-    const captainEmail = normalizeString(captainRecord.email);
+    let captainEmail = normalizeString(captainRecord.email);
+    if (!captainEmail) {
+      captainEmail = normalizeString(payload.captain_email || "");
+    }
+    if (!captainEmail && normalizeString(payload.captain_identifier || "").includes("@")) {
+      captainEmail = normalizeString(payload.captain_identifier);
+    }
+    if (!captainEmail) {
+      return { ok: false, error: "Please provide a valid email address to receive your team login password." };
+    }
     const captainName = captainRecord.name;
     const captainRoll = captainRecord.roll;
     const captainBranch = captainRecord.branch;

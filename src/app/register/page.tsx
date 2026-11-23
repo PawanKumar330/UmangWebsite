@@ -31,6 +31,7 @@ export default function RegisterTeamPage() {
 
   // Form states
   const [captainId, setCaptainId] = useState<string>("");
+  const [captainEmailInput, setCaptainEmailInput] = useState<string>("");
   const [captainVerified, setCaptainVerified] = useState<Student | null>(null);
   const [captainVerifying, setCaptainVerifying] = useState<boolean>(false);
   const [captainError, setCaptainError] = useState<string>("");
@@ -222,6 +223,11 @@ export default function RegisterTeamPage() {
       return;
     }
 
+    if (!captainEmailInput.trim() || !captainEmailInput.includes("@")) {
+      setSubmitError("Please enter a valid Captain Email address so you can receive your login password.");
+      return;
+    }
+
     const currentTotal = 1 + teammates.length; // Captain + teammates
     if (currentTotal < selectedEvent.min_team_size) {
       setSubmitError(
@@ -266,6 +272,7 @@ export default function RegisterTeamPage() {
         action: "registerTeam",
         event_id: selectedEventId,
         captain_identifier: captainVerified.roll,
+        captain_email: captainEmailInput.trim(),
         team_name: teamName.trim(),
         members: payloadMembers,
       });
@@ -528,24 +535,45 @@ export default function RegisterTeamPage() {
 
           {/* Captain Verified Card */}
           {captainVerified && (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm flex items-center justify-between animate-in fade-in">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold">
-                  {captainVerified.name.charAt(0)}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-900">{captainVerified.name}</span>
-                    <span className="text-[10px] font-bold uppercase bg-festive-maroon-700 text-white px-2 py-0.5 rounded-md">
-                      Captain
-                    </span>
+            <div className="space-y-4 animate-in fade-in">
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold">
+                    {captainVerified.name.charAt(0)}
                   </div>
-                  <p className="text-slate-600 text-xs">
-                    Roll: <strong>{captainVerified.roll}</strong> • Branch: {captainVerified.branch}
-                  </p>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-slate-900">{captainVerified.name}</span>
+                      <span className="text-[10px] font-bold uppercase bg-festive-maroon-700 text-white px-2 py-0.5 rounded-md">
+                        Captain Verified
+                      </span>
+                    </div>
+                    <p className="text-slate-600 text-xs">
+                      Roll: <strong>{captainVerified.roll}</strong> • Branch: {captainVerified.branch}
+                    </p>
+                  </div>
                 </div>
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               </div>
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+
+              {/* Captain Email Input for receiving password */}
+              <div className="space-y-1.5 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80">
+                <label className="text-xs font-bold uppercase text-amber-900 tracking-wider flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-festive-maroon-700" />
+                  Your Email Address (To Receive Team Login Password) *
+                </label>
+                <input
+                  type="email"
+                  placeholder="e.g. yourname@gmail.com"
+                  value={captainEmailInput}
+                  onChange={(e) => setCaptainEmailInput(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium bg-white"
+                  required
+                />
+                <p className="text-[11px] text-amber-800">
+                  Your generated 8-character login password will be emailed to this address upon submitting the team.
+                </p>
+              </div>
             </div>
           )}
         </div>
