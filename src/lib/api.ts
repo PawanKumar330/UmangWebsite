@@ -408,6 +408,27 @@ export async function callApi<T = any>(payload: Record<string, any>): Promise<Ap
       return { ok: true, data: { message: "Notice posted successfully." } as unknown as T };
     }
 
+    case "adminInspectSourceSheet": {
+      return {
+        ok: true,
+        data: {
+          spreadsheet_title: "UMANG 4.0(Quiz& Crossword ) (Responses)",
+          sheets: [{ name: "Form Responses 1", gid: "944636428", rows: 45, cols: 6 }],
+          target_sheet_name: "Form Responses 1",
+          target_sheet_gid: "944636428",
+          headers_found: ["Timestamp", "Full Name", "Roll No", "Email Address", "Branch", "WhatsApp No"],
+          detected_mapping: {
+            name_column: "Full Name (Col 2)",
+            roll_column: "Roll No (Col 3)",
+            email_column: "Email Address (Col 4)",
+            branch_column: "Branch (Col 5)",
+          },
+          total_students_found: 5,
+          sample_students: mockStudents["EVT-QUIZ-CROSSWORD"] || [],
+        } as unknown as T,
+      };
+    }
+
     default:
       return { ok: false, error: `Unhandled action: ${action}` };
   }
