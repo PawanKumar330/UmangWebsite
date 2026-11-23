@@ -187,9 +187,10 @@ export default function RegisterTeamPage() {
   const handleAddTeammate = (student: Student) => {
     if (!selectedEvent) return;
 
+    const currentMax = Number(selectedEvent.max_team_size) || 10;
     const totalMembers = (captainVerified ? 1 : 0) + teammates.length + 1;
-    if (totalMembers > selectedEvent.max_team_size) {
-      setSearchError(`Maximum ${selectedEvent.max_team_size} members allowed for this event.`);
+    if (totalMembers > currentMax) {
+      setSearchError(`Maximum ${currentMax} members allowed for this event.`);
       return;
     }
 
@@ -223,22 +224,26 @@ export default function RegisterTeamPage() {
       return;
     }
 
-    if (!captainEmailInput.trim() || !captainEmailInput.includes("@")) {
-      setSubmitError("Please enter a valid Captain Email address so you can receive your login password.");
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!captainEmailInput.trim() || !emailRegex.test(captainEmailInput.trim())) {
+      setSubmitError("Please enter a valid Captain Email address (e.g. name@gmail.com) so you can receive your login password.");
       return;
     }
 
+    const minSize = Number(selectedEvent.min_team_size) || 1;
+    const maxSize = Number(selectedEvent.max_team_size) || 10;
     const currentTotal = 1 + teammates.length; // Captain + teammates
-    if (currentTotal < selectedEvent.min_team_size) {
+
+    if (currentTotal < minSize) {
       setSubmitError(
-        `This event requires at least ${selectedEvent.min_team_size} members. You currently have ${currentTotal}.`
+        `This event requires at least ${minSize} members (including captain). You currently have ${currentTotal}. Please add ${minSize - currentTotal} more teammate(s).`
       );
       return;
     }
 
-    if (currentTotal > selectedEvent.max_team_size) {
+    if (currentTotal > maxSize) {
       setSubmitError(
-        `This event allows a maximum of ${selectedEvent.max_team_size} members. You currently have ${currentTotal}.`
+        `This event allows a maximum of ${maxSize} members (including captain). You currently have ${currentTotal}.`
       );
       return;
     }
@@ -380,8 +385,8 @@ export default function RegisterTeamPage() {
   }
 
   const currentCount = (captainVerified ? 1 : 0) + teammates.length;
-  const minSize = selectedEvent?.min_team_size || 1;
-  const maxSize = selectedEvent?.max_team_size || 10;
+  const minSize = Number(selectedEvent?.min_team_size) || 1;
+  const maxSize = Number(selectedEvent?.max_team_size) || 10;
   const isSizeValid = currentCount >= minSize && currentCount <= maxSize;
 
   return (
@@ -613,13 +618,20 @@ export default function RegisterTeamPage() {
               </label>
               {selectedEvent && (
                 <span
-                  className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                  className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${
                     isSizeValid
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-amber-100 text-amber-800"
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                      : "bg-amber-50 text-amber-800 border-amber-300"
                   }`}
                 >
-                  {currentCount} of {minSize}-{maxSize} Members
+                  {isSizeValid ? (
+                    <>Squad Ready: {currentCount} of {minSize}-{maxSize} Members ✅</>
+                  ) : (
+                    <>
+                      {currentCount} of {minSize}-{maxSize} Members{" "}
+                      {currentCount < minSize ? `(Need ${minSize - currentCount} more)` : `(Max ${maxSize})`}
+                    </>
+                  )}
                 </span>
               )}
             </div>
@@ -766,7 +778,13 @@ export default function RegisterTeamPage() {
         {/* Submit Action Button */}
         <button
           type="submit"
-          disabled={submitting || !captainVerified || !teamName.trim() || !isSizeValid}
+          disabled={
+            submitting ||
+            !captainVerified ||
+            !teamName.trim() ||
+            !captainEmailInput.trim() ||
+            !isSizeValid
+          }
           className="w-full py-4 rounded-2xl font-bold text-white text-base bg-gradient-to-r from-festive-maroon-700 via-festive-maroon-800 to-festive-saffron-600 hover:opacity-95 transition-all shadow-xl shadow-festive-maroon-800/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-[0.99]"
         >
           {submitting ? (

@@ -172,7 +172,7 @@ export default function CaptainDashboardPage() {
   const handleAddMemberToEdit = (student: Student) => {
     if (!editingTeam) return;
 
-    const maxSize = editingTeam.max_team_size || 10;
+    const maxSize = Number(editingTeam.max_team_size) || 10;
     if (editMembers.length >= maxSize) {
       setEditError(`Cannot exceed maximum team size of ${maxSize} members.`);
       return;
@@ -201,7 +201,7 @@ export default function CaptainDashboardPage() {
     }
 
     if (!editingTeam) return;
-    const minSize = editingTeam.min_team_size || 1;
+    const minSize = Number(editingTeam.min_team_size) || 1;
     if (editMembers.length - 1 < minSize) {
       setEditError(`This event requires a minimum of ${minSize} members.`);
       return;
@@ -221,8 +221,8 @@ export default function CaptainDashboardPage() {
       return;
     }
 
-    const minSize = editingTeam.min_team_size || 1;
-    const maxSize = editingTeam.max_team_size || 10;
+    const minSize = Number(editingTeam.min_team_size) || 1;
+    const maxSize = Number(editingTeam.max_team_size) || 10;
 
     if (editMembers.length < minSize || editMembers.length > maxSize) {
       setEditError(`Team must have between ${minSize} and ${maxSize} members.`);

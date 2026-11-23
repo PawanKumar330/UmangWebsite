@@ -22,6 +22,10 @@ import {
   Eye,
   X,
   FileSpreadsheet,
+  Mail,
+  Send,
+  Trash2,
+  Check,
 } from "lucide-react";
 import { callApi } from "@/lib/api";
 import { EventItem, Team, Notice } from "@/types";
@@ -33,7 +37,7 @@ export default function AdminPage() {
   const [loginError, setLoginError] = useState("");
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState<"events" | "teams" | "reset" | "notices">("events");
+  const [activeTab, setActiveTab] = useState<"events" | "teams" | "email" | "reset" | "notices">("events");
 
   // Admin Data states
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -41,10 +45,20 @@ export default function AdminPage() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loadingData, setLoadingData] = useState(false);
 
-  // Teams Search & Filter
+  // Teams Search, Filter & Deletion
   const [selectedEventFilter, setSelectedEventFilter] = useState("ALL");
   const [teamSearch, setTeamSearch] = useState("");
   const [viewingTeam, setViewingTeam] = useState<Team | null>(null);
+  const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
+
+  // Gmail Testing states
+  const [testEmailAddress, setTestEmailAddress] = useState("");
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{
+    type: "success" | "error";
+    text: string;
+    details?: string;
+  } | null>(null);
 
   // Event Modal (Create / Edit)
   const [eventModalOpen, setEventModalOpen] = useState(false);
@@ -321,6 +335,72 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteTeam = async (teamId: string, teamName: string) => {
+    if (!adminToken) return;
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete team "${teamName}" (${teamId})?\n\nThis will remove the team and allow its members to join other teams.`
+    );
+    if (!confirmed) return;
+
+    setDeletingTeamId(teamId);
+    try {
+      const res = await callApi<{ message: string }>({
+        action: "adminDeleteTeam",
+        token: adminToken,
+        team_id: teamId,
+      });
+
+      if (res.ok) {
+        alert(res.data?.message || `Team ${teamName} deleted successfully.`);
+        if (viewingTeam?.team_id === teamId) setViewingTeam(null);
+        fetchAdminData(adminToken);
+      } else {
+        alert("Failed to delete team: " + (res.error || "Unknown error"));
+      }
+    } catch (err: any) {
+      alert("Error deleting team: " + (err.message || "Network error"));
+    } finally {
+      setDeletingTeamId(null);
+    }
+  };
+
+  const handleTestEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminToken || !testEmailAddress.trim()) return;
+
+    setTestingEmail(true);
+    setTestEmailResult(null);
+
+    try {
+      const res = await callApi<{ to_email: string; message: string }>({
+        action: "adminTestEmail",
+        token: adminToken,
+        to_email: testEmailAddress.trim(),
+      });
+
+      if (res.ok && res.data) {
+        setTestEmailResult({
+          type: "success",
+          text: res.data.message || `Test email dispatched to ${testEmailAddress}!`,
+        });
+      } else {
+        setTestEmailResult({
+          type: "error",
+          text: res.error || "Gmail delivery test failed.",
+          details:
+            "Make sure you authorized MailApp permissions in your Apps Script and created a 'New version' deployment.",
+        });
+      }
+    } catch (err: any) {
+      setTestEmailResult({
+        type: "error",
+        text: err.message || "Network error while calling adminTestEmail.",
+      });
+    } finally {
+      setTestingEmail(false);
+    }
+  };
+
   // Filtered teams table
   const filteredTeams = teams.filter((t) => {
     const matchEvent = selectedEventFilter === "ALL" || t.event_id === selectedEventFilter;
@@ -475,6 +555,7 @@ export default function AdminPage() {
         {[
           { id: "events", label: "Manage Events", icon: Calendar },
           { id: "teams", label: `Teams Roster (${teams.length})`, icon: Users },
+          { id: "email", label: "Gmail Service Test", icon: Mail },
           { id: "reset", label: "Reset Captain Password", icon: KeyRound },
           { id: "notices", label: "Post Bulletins", icon: Bell },
         ].map((tab) => {
@@ -659,12 +740,25 @@ export default function AdminPage() {
                             {team.status}
                           </span>
                         </td>
-                        <td className="px-5 py-3.5 text-right">
+                        <td className="px-5 py-3.5 text-right whitespace-nowrap space-x-2">
                           <button
                             onClick={() => setViewingTeam(team)}
-                            className="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold text-festive-maroon-700 bg-festive-maroon-50 hover:bg-festive-maroon-100 transition"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-festive-maroon-700 bg-festive-maroon-50 hover:bg-festive-maroon-100 transition"
                           >
                             <Eye className="w-3.5 h-3.5" /> View Squad
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTeam(team.team_id, team.team_name)}
+                            disabled={deletingTeamId === team.team_id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition disabled:opacity-50"
+                            title="Delete this team permanently"
+                          >
+                            {deletingTeamId === team.team_id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                            Delete
                           </button>
                         </td>
                       </tr>
@@ -673,6 +767,100 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: GMAIL SERVICE TEST */}
+      {activeTab === "email" && (
+        <div className="max-w-2xl mx-auto space-y-6">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-festive-maroon-50 text-festive-maroon-700 text-xs font-bold uppercase tracking-wider mb-2">
+                <Mail className="w-3.5 h-3.5" /> Email Delivery Diagnostics
+              </div>
+              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
+                Test Gmail Service & MailApp Delivery
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                Verify that your deployed Google Apps Script has authorized Gmail permissions and is sending emails to captains properly.
+              </p>
+            </div>
+
+            {/* How it works info box */}
+            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-2 text-xs text-amber-900">
+              <div className="font-bold flex items-center gap-2">
+                <Check className="w-4 h-4 text-amber-700" />
+                How Captain Passwords & Emails are Sent:
+              </div>
+              <ul className="list-disc pl-5 space-y-1 text-amber-800">
+                <li>When a new captain registers, Apps Script uses <strong>MailApp.sendEmail</strong> from the Google account that published the Web App.</li>
+                <li>The email contains the team details and an auto-generated 8-character password.</li>
+                <li>Enter your personal or test email below to confirm that delivery works right now.</li>
+              </ul>
+            </div>
+
+            <form onSubmit={handleTestEmail} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
+                  Recipient Test Email Address *
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="email"
+                    placeholder="Enter email to receive test message (e.g. yourname@gmail.com)"
+                    value={testEmailAddress}
+                    onChange={(e) => setTestEmailAddress(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
+                    required
+                  />
+                </div>
+              </div>
+
+              {testEmailResult && (
+                <div
+                  className={`p-4 rounded-2xl text-xs sm:text-sm space-y-1.5 ${
+                    testEmailResult.type === "success"
+                      ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
+                      : "bg-rose-50 text-rose-900 border border-rose-200"
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5 font-bold">
+                    {testEmailResult.type === "success" ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <span>{testEmailResult.text}</span>
+                  </div>
+                  {testEmailResult.details && (
+                    <p className="text-xs text-rose-700 pl-7">{testEmailResult.details}</p>
+                  )}
+                  {testEmailResult.type === "success" && (
+                    <p className="text-xs text-emerald-700 pl-7">
+                      Please check your <strong>Inbox</strong> (and also the <strong>Spam / Promotions</strong> folder).
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={testingEmail || !testEmailAddress.trim()}
+                className="w-full py-4 rounded-2xl font-bold text-white text-sm bg-festive-maroon-700 hover:bg-festive-maroon-800 transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-festive-maroon-700/20"
+              >
+                {testingEmail ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Dispatching Test Email via Google Apps Script...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" /> Send Live Test Email
+                  </>
+                )}
+              </button>
+            </form>
           </div>
         </div>
       )}
@@ -1174,12 +1362,28 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <button
-              onClick={() => setViewingTeam(null)}
-              className="w-full py-2.5 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs sm:text-sm"
-            >
-              Close
-            </button>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => handleDeleteTeam(viewingTeam.team_id, viewingTeam.team_name)}
+                disabled={deletingTeamId === viewingTeam.team_id}
+                className="flex-1 py-2.5 rounded-xl font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs sm:text-sm flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+              >
+                {deletingTeamId === viewingTeam.team_id ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                Delete Team
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingTeam(null)}
+                className="flex-1 py-2.5 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs sm:text-sm transition"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

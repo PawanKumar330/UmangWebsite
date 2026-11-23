@@ -174,6 +174,12 @@ function doPost(e) {
       case "adminInspectSourceSheet":
         result = handleAdminInspectSourceSheet(payload);
         break;
+      case "adminTestEmail":
+        result = handleAdminTestEmail(payload);
+        break;
+      case "adminDeleteTeam":
+        result = handleAdminDeleteTeam(payload);
+        break;
 
       default:
         result = { ok: false, error: "Unknown action: " + action };
@@ -331,17 +337,45 @@ function handleRegisterTeam(payload) {
       return { ok: false, error: "Registration deadline for this event has passed." };
     }
 
-    // 2. Verify Team Name is unique within this event (case-insensitive)
+    // 2. Verify Team Name is unique within this event, and collect existing members
     const ss = getPortalDb();
     const teamsSheet = getSheetOrInit(ss, CONFIG.TABS.TEAMS);
     const teamsData = teamsSheet.getDataRange().getValues();
     const teamNameNorm = normalizeString(teamName);
 
+    // Track existing captains and student participants in this event
+    const existingCaptainsInEvent = new Set();
+    const registeredMembersInEvent = {}; // rollNorm -> { name, teamName }
+
     for (let i = 1; i < teamsData.length; i++) {
       const rowEventId = String(teamsData[i][1] || "").trim();
-      const rowTeamName = normalizeString(teamsData[i][2]);
-      if (rowEventId === eventId && rowTeamName === teamNameNorm) {
+      if (rowEventId !== eventId) continue;
+
+      const rowTeamName = String(teamsData[i][2] || "").trim();
+      const rowTeamNameNorm = normalizeString(rowTeamName);
+      const rowCaptain = normalizeString(teamsData[i][3]);
+
+      if (rowTeamNameNorm === teamNameNorm) {
         return { ok: false, error: "A team with this name already exists in this event. Please choose another name." };
+      }
+
+      existingCaptainsInEvent.add(rowCaptain);
+
+      let rowMembers = [];
+      try {
+        rowMembers = JSON.parse(teamsData[i][4]);
+      } catch (e) {
+        rowMembers = [];
+      }
+
+      for (let j = 0; j < rowMembers.length; j++) {
+        const mRoll = normalizeString(rowMembers[j].roll);
+        if (mRoll) {
+          registeredMembersInEvent[mRoll] = {
+            name: rowMembers[j].name || "Student",
+            teamName: rowTeamName
+          };
+        }
       }
     }
 
@@ -367,12 +401,34 @@ function handleRegisterTeam(payload) {
     if (!captainEmail && normalizeString(payload.captain_identifier || "").includes("@")) {
       captainEmail = normalizeString(payload.captain_identifier);
     }
-    if (!captainEmail) {
-      return { ok: false, error: "Please provide a valid email address to receive your team login password." };
+    
+    // Strict email format check
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!captainEmail || !emailRegex.test(captainEmail)) {
+      return { ok: false, error: "A valid email address (e.g. name@gmail.com) is required to receive your login password." };
     }
+
     const captainName = captainRecord.name;
     const captainRoll = captainRecord.roll;
     const captainBranch = captainRecord.branch;
+
+    // Rule: In a particular event, a member can be captain of ONE team only
+    if (existingCaptainsInEvent.has(captainEmail)) {
+      return {
+        ok: false,
+        error: `Registration failed: You have already registered a team as captain for this event. A captain can lead only one team per event.`
+      };
+    }
+
+    // Rule: No member can participate in multiple teams within the same event
+    const captainRollNorm = normalizeString(captainRoll);
+    if (registeredMembersInEvent[captainRollNorm]) {
+      const existing = registeredMembersInEvent[captainRollNorm];
+      return {
+        ok: false,
+        error: `Registration failed: You (${captainName}, Roll: ${captainRoll}) are already participating in team '${existing.teamName}' for this event. A student can participate in only one team per event.`
+      };
+    }
 
     // 5. Ensure Captain is in Members list, but never twice
     const normalizedMembers = [];
@@ -385,7 +441,7 @@ function handleRegisterTeam(payload) {
       branch: captainBranch,
       is_captain: true
     });
-    seenRolls.add(normalizeString(captainRoll));
+    seenRolls.add(captainRollNorm);
 
     // Process provided teammates
     for (let i = 0; i < members.length; i++) {
@@ -395,6 +451,15 @@ function handleRegisterTeam(payload) {
 
       if (seenRolls.has(rollNorm)) {
         continue; // Skip duplicate / captain added again
+      }
+
+      // Check if teammate is already in another team in this event
+      if (registeredMembersInEvent[rollNorm]) {
+        const existing = registeredMembersInEvent[rollNorm];
+        return {
+          ok: false,
+          error: `Registration failed: Student ${m.name || "with Roll " + m.roll} is already registered in team '${existing.teamName}' for this event. Each student can participate in only one team per event.`
+        };
       }
 
       // Verify member exists in source sheet
@@ -415,17 +480,20 @@ function handleRegisterTeam(payload) {
       });
     }
 
-    // 6. Enforce Min / Max team size
-    if (normalizedMembers.length < event.min_team_size) {
+    // 6. Strict Min / Max team size enforcement
+    const minSize = parseInt(event.min_team_size, 10) || 1;
+    const maxSize = parseInt(event.max_team_size, 10) || 10;
+
+    if (normalizedMembers.length < minSize) {
       return {
         ok: false,
-        error: `This event requires a minimum of ${event.min_team_size} members (including captain). You have ${normalizedMembers.length}.`
+        error: `Registration failed: This event requires a minimum of ${minSize} members (including captain). You currently have ${normalizedMembers.length}.`
       };
     }
-    if (normalizedMembers.length > event.max_team_size) {
+    if (normalizedMembers.length > maxSize) {
       return {
         ok: false,
-        error: `This event allows a maximum of ${event.max_team_size} members (including captain). You have ${normalizedMembers.length}.`
+        error: `Registration failed: This event allows a maximum of ${maxSize} members (including captain). You currently have ${normalizedMembers.length}.`
       };
     }
 
@@ -806,9 +874,47 @@ function handleUpdateTeam(payload) {
 
     // Validate members against event source sheet
     const sourceStudents = getSourceSheetStudents(event.source_sheet_id, event.source_tab_name);
-    const captainRecord = sourceStudents.find(s => normalizeString(s.email) === captainEmail);
+
+    // Retrieve captain details from existing team record or source sheet
+    let existingTeamMembers = [];
+    try {
+      existingTeamMembers = JSON.parse(teamsData[teamRowIndex - 1][4]);
+    } catch (e) {
+      existingTeamMembers = [];
+    }
+    const existingCaptain = existingTeamMembers.find(m => m.is_captain) || existingTeamMembers[0];
+    const existingCaptainRoll = existingCaptain ? normalizeString(existingCaptain.roll) : "";
+
+    const captainRecord = sourceStudents.find(s => 
+      (existingCaptainRoll && normalizeString(s.roll) === existingCaptainRoll) ||
+      (captainEmail && normalizeString(s.email) === captainEmail)
+    ) || existingCaptain;
+
     if (!captainRecord) {
       return { ok: false, error: "Captain record not found in event source sheet." };
+    }
+
+    // Collect all members currently registered in OTHER teams for this event
+    const otherTeamsMembers = {}; // rollNorm -> teamName
+    for (let i = 1; i < teamsData.length; i++) {
+      if (i + 1 === teamRowIndex) continue; // Skip current team being edited
+      const rowEventId = String(teamsData[i][1] || "").trim();
+      if (rowEventId !== currentTeam.event_id) continue;
+
+      const rowTeamName = String(teamsData[i][2] || "").trim();
+      let rowMembers = [];
+      try {
+        rowMembers = JSON.parse(teamsData[i][4]);
+      } catch (e) {
+        rowMembers = [];
+      }
+
+      for (let j = 0; j < rowMembers.length; j++) {
+        const mRoll = normalizeString(rowMembers[j].roll);
+        if (mRoll) {
+          otherTeamsMembers[mRoll] = rowTeamName;
+        }
+      }
     }
 
     const validatedMembers = [];
@@ -828,6 +934,14 @@ function handleUpdateTeam(payload) {
       const rollNorm = normalizeString(m.roll);
       if (!rollNorm || seenRolls.has(rollNorm)) continue;
 
+      // Check if teammate is already participating in another team for this event
+      if (otherTeamsMembers[rollNorm]) {
+        return {
+          ok: false,
+          error: `Student ${m.name || "Roll: " + m.roll} is already registered in team '${otherTeamsMembers[rollNorm]}' for this event. A student can participate in only one team per event.`
+        };
+      }
+
       const found = sourceStudents.find(s => normalizeString(s.roll) === rollNorm);
       if (!found) {
         return {
@@ -846,16 +960,19 @@ function handleUpdateTeam(payload) {
     }
 
     // Enforce size limits
-    if (validatedMembers.length < event.min_team_size) {
+    const minSize = parseInt(event.min_team_size, 10) || 1;
+    const maxSize = parseInt(event.max_team_size, 10) || 10;
+
+    if (validatedMembers.length < minSize) {
       return {
         ok: false,
-        error: `Team must have at least ${event.min_team_size} members. Current: ${validatedMembers.length}`
+        error: `Team must have at least ${minSize} members (including captain). Current: ${validatedMembers.length}`
       };
     }
-    if (validatedMembers.length > event.max_team_size) {
+    if (validatedMembers.length > maxSize) {
       return {
         ok: false,
-        error: `Team cannot exceed ${event.max_team_size} members. Current: ${validatedMembers.length}`
+        error: `Team cannot exceed ${maxSize} members (including captain). Current: ${validatedMembers.length}`
       };
     }
 
@@ -1179,6 +1296,85 @@ function handleAdminPostNotice(payload) {
       message: "Notice posted successfully."
     }
   };
+}
+
+/**
+ * Delete a Team (Admin only). Useful for clearing test or duplicate teams.
+ */
+function handleAdminDeleteTeam(payload) {
+  const token = payload.token || "";
+  const auth = verifySessionToken(token, "admin");
+  if (!auth.valid) return { ok: false, error: "Admin unauthorized." };
+
+  const teamId = String(payload.team_id || "").trim();
+  if (!teamId) return { ok: false, error: "Team ID is required." };
+
+  const ss = getPortalDb();
+  const sheet = getSheetOrInit(ss, CONFIG.TABS.TEAMS);
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === teamId) {
+      sheet.deleteRow(i + 1);
+      return { ok: true, data: { message: "Team " + teamId + " deleted successfully." } };
+    }
+  }
+
+  return { ok: false, error: "Team " + teamId + " not found." };
+}
+
+/**
+ * Test Gmail / MailApp Service Delivery (Admin only).
+ * Sends a real test email to verify credentials, permissions, and inbox delivery.
+ */
+function handleAdminTestEmail(payload) {
+  const token = payload.token || "";
+  const auth = verifySessionToken(token, "admin");
+  if (!auth.valid) return { ok: false, error: "Admin unauthorized." };
+
+  const toEmail = normalizeString(payload.to_email || payload.email || "");
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!toEmail || !emailRegex.test(toEmail)) {
+    return { ok: false, error: "Please provide a valid recipient email address (e.g. name@gmail.com)." };
+  }
+
+  try {
+    const subject = "[UMANG 2026] Gmail Service Test - MCE Motihari";
+    const htmlBody = `
+      <div style="font-family:'Segoe UI',Roboto,Helvetica,sans-serif;max-width:520px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#ffffff;padding:24px;">
+        <div style="background:linear-gradient(135deg,#881337 0%,#be123c 100%);color:#ffffff;padding:16px;text-align:center;border-radius:8px;margin-bottom:16px;">
+          <h2 style="margin:0;font-size:20px;">Gmail Service Test</h2>
+          <p style="margin:4px 0 0 0;font-size:12px;opacity:0.9;">UMANG 2026 • Motihari College of Engineering</p>
+        </div>
+        <h3 style="color:#059669;margin-top:0;">Delivery Successful! ✅</h3>
+        <p>This test email confirms that your Google Apps Script <strong>MailApp / Gmail service</strong> is active, authorized, and sending emails properly from your Google account.</p>
+        <p style="background:#f8fafc;padding:10px;border-radius:6px;font-size:12px;color:#475569;margin:16px 0;">
+          <strong>Recipient:</strong> ${escapeHtml(toEmail)}<br/>
+          <strong>Timestamp:</strong> ${new Date().toISOString()}
+        </p>
+        <p style="font-size:12px;color:#94a3b8;margin:0;">Motihari College of Engineering Cultural Fest Committee</p>
+      </div>
+    `;
+
+    MailApp.sendEmail({
+      to: toEmail,
+      subject: subject,
+      htmlBody: htmlBody
+    });
+
+    return {
+      ok: true,
+      data: {
+        to_email: toEmail,
+        message: "Test email successfully sent to " + toEmail + "! Please check your inbox or spam folder."
+      }
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: "Gmail delivery failed: " + err.toString() + ". Make sure you have authorized MailApp permissions in your Apps Script project."
+    };
+  }
 }
 
 // =========================================================================
