@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bell, Calendar, Trophy, Sparkles, Filter, Loader2, ArrowLeft } from "lucide-react";
+import { Bell, Filter, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { callApi } from "@/lib/api";
 import { Notice, EventItem } from "@/types";
@@ -39,42 +39,45 @@ export default function NoticesPage() {
 
   // Filter notices
   const filteredNotices = notices.filter((n) => {
-    const matchType = filterType === "all" || n.type.toLowerCase() === filterType.toLowerCase();
-    const matchEvent = selectedEventId === "ALL" || n.event_id === "ALL" || n.event_id === selectedEventId;
+    const matchType =
+      filterType === "all" || n.type.toLowerCase() === filterType.toLowerCase();
+    const matchEvent =
+      selectedEventId === "ALL" ||
+      n.event_id === "ALL" ||
+      n.event_id === selectedEventId;
     return matchType && matchEvent;
   });
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-4 border-b border-stone-200 pb-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-festive-saffron-100 text-festive-saffron-900 text-xs font-bold uppercase tracking-wider mb-2">
-            <Bell className="w-3.5 h-3.5 text-festive-saffron-700" />
+          <p className="text-xs font-mono uppercase tracking-wider text-stone-500 mb-1">
             Official Bulletin Board
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-            Notices, Schedule & Results
+          </p>
+          <h1 className="text-2xl sm:text-3xl font-serif text-stone-900 tracking-tight font-normal">
+            Notices, Schedules & Results
           </h1>
-          <p className="text-slate-500 text-xs sm:text-sm mt-1">
-            Stay updated with event slots, rules, reporting schedules, and winner announcements.
+          <p className="text-stone-600 text-xs sm:text-sm mt-1">
+            Stage line-ups, sound-check call times, guidelines, and competition results.
           </p>
         </div>
 
         <Link
           href="/register"
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-festive-maroon-700 hover:bg-festive-maroon-800 shadow-sm"
+          className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-md text-xs sm:text-sm font-medium text-white bg-[#831830] hover:bg-[#6e192c] transition-colors shadow-sm self-start sm:self-auto"
         >
           Register Team
         </Link>
       </div>
 
       {/* Filter Controls */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-        {/* Type Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+      <div className="bg-white rounded-lg p-3 sm:p-4 border border-stone-200 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Type Filter Tabs */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
           {[
-            { id: "all", label: "All Updates" },
+            { id: "all", label: "All updates" },
             { id: "notice", label: "Notices" },
             { id: "schedule", label: "Schedules" },
             { id: "result", label: "Results" },
@@ -82,10 +85,10 @@ export default function NoticesPage() {
             <button
               key={tab.id}
               onClick={() => setFilterType(tab.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
                 filterType === tab.id
-                  ? "bg-festive-maroon-700 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  ? "bg-stone-900 text-white"
+                  : "bg-stone-100 text-stone-700 hover:bg-stone-200"
               }`}
             >
               {tab.label}
@@ -95,13 +98,13 @@ export default function NoticesPage() {
 
         {/* Event Filter Select */}
         <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+          <Filter className="w-3.5 h-3.5 text-stone-400 shrink-0" />
           <select
             value={selectedEventId}
             onChange={(e) => setSelectedEventId(e.target.value)}
-            className="w-full sm:w-auto px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-medium bg-slate-50 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700"
+            className="w-full sm:w-auto px-2.5 py-1.5 rounded-md border border-stone-300 text-xs font-medium bg-stone-50 focus:outline-none focus:border-[#831830]"
           >
-            <option value="ALL">All Cultural Events</option>
+            <option value="ALL">All events</option>
             {events.map((evt) => (
               <option key={evt.event_id} value={evt.event_id}>
                 {evt.event_name}
@@ -113,20 +116,20 @@ export default function NoticesPage() {
 
       {/* Notices Feed */}
       {loading ? (
-        <div className="flex items-center justify-center py-12 gap-2 text-slate-400">
-          <Loader2 className="w-6 h-6 animate-spin text-festive-maroon-700" />
+        <div className="flex items-center justify-center py-12 gap-2 text-stone-400">
+          <Loader2 className="w-5 h-5 animate-spin text-[#831830]" />
           <span className="text-sm">Loading bulletin board...</span>
         </div>
       ) : filteredNotices.length === 0 ? (
-        <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 text-slate-500 space-y-2">
-          <Bell className="w-8 h-8 text-slate-300 mx-auto" />
-          <h3 className="font-bold text-slate-800">No updates matching your filter</h3>
-          <p className="text-xs text-slate-400">
-            Check back later or change your event/category filter.
+        <div className="bg-white rounded-lg p-10 text-center border border-stone-200 text-stone-500 space-y-1.5">
+          <Bell className="w-6 h-6 text-stone-400 mx-auto" />
+          <h3 className="font-medium text-stone-800 text-sm">No updates matching your filter</h3>
+          <p className="text-xs text-stone-500">
+            Check back later or change your category filter.
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {filteredNotices.map((notice) => {
             const isResult = notice.type.toLowerCase() === "result";
             const isSchedule = notice.type.toLowerCase() === "schedule";
@@ -134,31 +137,31 @@ export default function NoticesPage() {
             return (
               <div
                 key={notice.notice_id}
-                className={`bg-white rounded-3xl p-6 sm:p-7 border shadow-sm transition-all space-y-3 ${
+                className={`bg-white rounded-lg p-5 sm:p-6 border shadow-sm transition-colors space-y-2.5 ${
                   isResult
-                    ? "border-amber-300 bg-amber-50/20"
-                    : "border-slate-200 hover:border-slate-300"
+                    ? "border-amber-300/80 bg-amber-50/20"
+                    : "border-stone-200"
                 }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                      className={`text-[11px] font-mono font-medium px-2 py-0.5 rounded ${
                         isResult
                           ? "bg-amber-100 text-amber-900 border border-amber-300"
                           : isSchedule
-                          ? "bg-sky-100 text-sky-900 border border-sky-300"
-                          : "bg-festive-maroon-100 text-festive-maroon-900 border border-festive-maroon-300"
+                          ? "bg-sky-50 text-sky-800 border border-sky-200"
+                          : "bg-stone-100 text-stone-800 border border-stone-200"
                       }`}
                     >
-                      {notice.type}
+                      {notice.type.toUpperCase()}
                     </span>
-                    <span className="text-xs text-slate-500 font-medium">
-                      Event: <strong className="text-slate-800">{notice.event_id}</strong>
+                    <span className="text-xs text-stone-500">
+                      Event: <strong className="font-medium text-stone-800">{notice.event_id}</strong>
                     </span>
                   </div>
 
-                  <span className="text-xs text-slate-400 font-mono">
+                  <span className="text-xs text-stone-500 font-mono tabular-nums">
                     {new Date(notice.created_at).toLocaleDateString("en-IN", {
                       day: "numeric",
                       month: "short",
@@ -169,11 +172,11 @@ export default function NoticesPage() {
                   </span>
                 </div>
 
-                <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">
+                <h2 className="text-base sm:text-lg font-semibold text-stone-900">
                   {notice.title}
                 </h2>
 
-                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">
+                <p className="text-sm text-stone-700 whitespace-pre-line leading-relaxed">
                   {notice.body}
                 </p>
               </div>

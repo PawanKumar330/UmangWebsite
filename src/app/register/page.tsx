@@ -19,6 +19,10 @@ import {
   Mail,
   Loader2,
   Info,
+  Send,
+  KeyRound,
+  RefreshCw,
+  Check,
 } from "lucide-react";
 import { callApi } from "@/lib/api";
 import { EventItem, Student, TeamMember } from "@/types";
@@ -35,6 +39,18 @@ export default function RegisterTeamPage() {
   const [captainVerified, setCaptainVerified] = useState<Student | null>(null);
   const [captainVerifying, setCaptainVerifying] = useState<boolean>(false);
   const [captainError, setCaptainError] = useState<string>("");
+
+  // Gmail Test & Confirmation states
+  const [emailOtpSent, setEmailOtpSent] = useState<boolean>(false);
+  const [emailOtpCode, setEmailOtpCode] = useState<string>("");
+  const [emailSendingOtp, setEmailSendingOtp] = useState<boolean>(false);
+  const [emailVerifyingOtp, setEmailVerifyingOtp] = useState<boolean>(false);
+  const [isEmailConfirmed, setIsEmailConfirmed] = useState<boolean>(false);
+  const [emailVerificationMsg, setEmailVerificationMsg] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
 
   const [teamName, setTeamName] = useState<string>("");
   const [teammates, setTeammates] = useState<Student[]>([]);
@@ -78,7 +94,16 @@ export default function RegisterTeamPage() {
     loadEvents();
   }, []);
 
-  // When event changes, reset captain verification and teammates to ensure strictly event-scoped validation
+  // Countdown timer for resending test OTP code
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
+  // When event changes, reset captain verification, teammates, and email confirmation
   const handleEventChange = (eventId: string) => {
     setSelectedEventId(eventId);
     setCaptainVerified(null);
@@ -87,6 +112,114 @@ export default function RegisterTeamPage() {
     setSearchQuery("");
     setSearchResults([]);
     setSubmitError("");
+    setIsEmailConfirmed(false);
+    setEmailOtpSent(false);
+    setEmailOtpCode("");
+    setEmailVerificationMsg(null);
+    setResendCooldown(0);
+  };
+
+  const handleEmailChange = (val: string) => {
+    setCaptainEmailInput(val);
+    if (isEmailConfirmed || emailOtpSent) {
+      setIsEmailConfirmed(false);
+      setEmailOtpSent(false);
+      setEmailOtpCode("");
+      setEmailVerificationMsg(null);
+      setResendCooldown(0);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    const trimmed = captainEmailInput.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmed || !emailRegex.test(trimmed)) {
+      setEmailVerificationMsg({
+        type: "error",
+        text: "Please enter a valid Gmail / Email address (e.g. name@gmail.com).",
+      });
+      return;
+    }
+
+    setEmailSendingOtp(true);
+    setEmailVerificationMsg(null);
+
+    try {
+      const res = await callApi<{ message: string }>({
+        action: "sendCaptainEmailVerification",
+        email: trimmed,
+        captain_name: captainVerified?.name || "Captain",
+        event_name: selectedEvent?.event_name || "Cultural Fest",
+      });
+
+      if (res.ok) {
+        setEmailOtpSent(true);
+        setResendCooldown(60);
+        setEmailVerificationMsg({
+          type: "success",
+          text:
+            res.data?.message ||
+            `Test confirmation code sent to ${trimmed}! Please check your Inbox or Spam folder.`,
+        });
+      } else {
+        setEmailVerificationMsg({
+          type: "error",
+          text:
+            res.error ||
+            "Failed to send test email. Please check your address or try again.",
+        });
+      }
+    } catch (err: any) {
+      setEmailVerificationMsg({
+        type: "error",
+        text: err.message || "Network error while sending test email.",
+      });
+    } finally {
+      setEmailSendingOtp(false);
+    }
+  };
+
+  const handleConfirmEmailCode = async () => {
+    const trimmed = captainEmailInput.trim();
+    const code = emailOtpCode.trim();
+    if (!code || code.length < 4) {
+      setEmailVerificationMsg({
+        type: "error",
+        text: "Please enter the 6-digit confirmation code received in your Gmail.",
+      });
+      return;
+    }
+
+    setEmailVerifyingOtp(true);
+    setEmailVerificationMsg(null);
+
+    try {
+      const res = await callApi<{ verified: boolean; message: string }>({
+        action: "verifyCaptainEmailCode",
+        email: trimmed,
+        code: code,
+      });
+
+      if (res.ok && res.data?.verified) {
+        setIsEmailConfirmed(true);
+        setEmailVerificationMsg({
+          type: "success",
+          text: "Gmail Confirmed! Your test email was delivered successfully. You can now complete your team registration.",
+        });
+      } else {
+        setEmailVerificationMsg({
+          type: "error",
+          text: res.error || "Incorrect confirmation code. Please check your Gmail message and try again.",
+        });
+      }
+    } catch (err: any) {
+      setEmailVerificationMsg({
+        type: "error",
+        text: err.message || "Network error while verifying code.",
+      });
+    } finally {
+      setEmailVerifyingOtp(false);
+    }
   };
 
   const selectedEvent = events.find((e) => e.event_id === selectedEventId);
@@ -230,6 +363,11 @@ export default function RegisterTeamPage() {
       return;
     }
 
+    if (!isEmailConfirmed) {
+      setSubmitError("Please confirm your Gmail address first. Click 'Send Test Verification Code' and enter the 6-digit confirmation code.");
+      return;
+    }
+
     const minSize = Number(selectedEvent.min_team_size) || 1;
     const maxSize = Number(selectedEvent.max_team_size) || 10;
     const currentTotal = 1 + teammates.length; // Captain + teammates
@@ -278,6 +416,7 @@ export default function RegisterTeamPage() {
         event_id: selectedEventId,
         captain_identifier: captainVerified.roll,
         captain_email: captainEmailInput.trim(),
+        verification_code: emailOtpCode.trim(),
         team_name: teamName.trim(),
         members: payloadMembers,
       });
@@ -561,23 +700,143 @@ export default function RegisterTeamPage() {
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               </div>
 
-              {/* Captain Email Input for receiving password */}
-              <div className="space-y-1.5 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80">
-                <label className="text-xs font-bold uppercase text-amber-900 tracking-wider flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-festive-maroon-700" />
-                  Your Email Address (To Receive Team Login Password) *
-                </label>
-                <input
-                  type="email"
-                  placeholder="e.g. yourname@gmail.com"
-                  value={captainEmailInput}
-                  onChange={(e) => setCaptainEmailInput(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium bg-white"
-                  required
-                />
-                <p className="text-[11px] text-amber-800">
-                  Your generated 8-character login password will be emailed to this address upon submitting the team.
+              {/* Captain Email Input & Gmail Delivery Confirmation Card */}
+              <div className="space-y-3.5 p-4 sm:p-5 rounded-2xl bg-amber-50/70 border border-amber-200/90">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <label className="text-xs font-bold uppercase text-amber-900 tracking-wider flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-festive-maroon-700" />
+                    Captain Gmail Address (Live Test Confirmation) *
+                  </label>
+                  {isEmailConfirmed ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Gmail Verified & Confirmed
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md">
+                      Confirmation Required
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <div className="relative flex-1">
+                    <input
+                      type="email"
+                      placeholder="e.g. yourname@gmail.com"
+                      value={captainEmailInput}
+                      onChange={(e) => handleEmailChange(e.target.value)}
+                      disabled={isEmailConfirmed}
+                      className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium ${
+                        isEmailConfirmed
+                          ? "bg-emerald-50/70 border-emerald-300 text-emerald-950 font-semibold"
+                          : "bg-white border-slate-300"
+                      }`}
+                      required
+                    />
+                  </div>
+
+                  {!isEmailConfirmed ? (
+                    <button
+                      type="button"
+                      onClick={handleSendTestEmail}
+                      disabled={emailSendingOtp || !captainEmailInput.trim() || resendCooldown > 0}
+                      className="px-4 py-3 rounded-xl font-bold text-xs sm:text-sm text-white bg-festive-maroon-700 hover:bg-festive-maroon-800 transition disabled:opacity-50 whitespace-nowrap flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99]"
+                    >
+                      {emailSendingOtp ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" /> Sending Test Code...
+                        </>
+                      ) : resendCooldown > 0 ? (
+                        <>Resend in {resendCooldown}s</>
+                      ) : emailOtpSent ? (
+                        <>
+                          <RefreshCw className="w-4 h-4" /> Resend Test Code
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4 text-festive-gold-300" /> Deliver Test Gmail
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEmailConfirmed(false);
+                        setEmailOtpSent(false);
+                        setEmailOtpCode("");
+                        setEmailVerificationMsg(null);
+                        setResendCooldown(0);
+                      }}
+                      className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-200/80 hover:bg-slate-300 transition"
+                    >
+                      Edit Email
+                    </button>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Click <strong>Deliver Test Gmail</strong> to receive a 6-digit test code in your inbox. This confirms that your Gmail accepts messages from the portal and ensures you receive your team login password.
                 </p>
+
+                {/* OTP Code Entry Card */}
+                {emailOtpSent && !isEmailConfirmed && (
+                  <div className="p-4 rounded-xl bg-white border border-festive-maroon-200 shadow-sm space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <KeyRound className="w-4 h-4 text-festive-maroon-700" />
+                        Enter 6-Digit Code Received in Your Gmail:
+                      </label>
+                      <span className="text-[10px] text-slate-400">Valid for 15 mins</span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        placeholder="e.g. 482915"
+                        value={emailOtpCode}
+                        onChange={(e) => setEmailOtpCode(e.target.value.replace(/\D/g, ""))}
+                        className="w-full sm:w-44 px-3.5 py-2.5 rounded-xl border border-slate-300 text-center font-mono text-lg font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 bg-slate-50"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleConfirmEmailCode}
+                        disabled={emailVerifyingOtp || emailOtpCode.trim().length < 6}
+                        className="flex-1 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 transition disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        {emailVerifyingOtp ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" /> Verifying Code...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" /> Confirm & Verify Gmail
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Email Verification Status Message */}
+                {emailVerificationMsg && (
+                  <div
+                    className={`p-3 rounded-xl text-xs flex items-start gap-2 ${
+                      emailVerificationMsg.type === "success"
+                        ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
+                        : "bg-rose-50 text-rose-900 border border-rose-200"
+                    }`}
+                  >
+                    {emailVerificationMsg.type === "success" ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <span>{emailVerificationMsg.text}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -782,7 +1041,7 @@ export default function RegisterTeamPage() {
             submitting ||
             !captainVerified ||
             !teamName.trim() ||
-            !captainEmailInput.trim() ||
+            !isEmailConfirmed ||
             !isSizeValid
           }
           className="w-full py-4 rounded-2xl font-bold text-white text-base bg-gradient-to-r from-festive-maroon-700 via-festive-maroon-800 to-festive-saffron-600 hover:opacity-95 transition-all shadow-xl shadow-festive-maroon-800/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-[0.99]"
@@ -798,6 +1057,12 @@ export default function RegisterTeamPage() {
             </>
           )}
         </button>
+
+        {!isEmailConfirmed && captainVerified && (
+          <p className="text-center text-xs text-amber-700 font-medium">
+            ⚠️ Please confirm your Gmail address above by entering the 6-digit test code before completing registration.
+          </p>
+        )}
 
         <p className="text-center text-xs text-slate-500">
           Already registered a team?{" "}

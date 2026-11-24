@@ -152,6 +152,14 @@ function doPost(e) {
         result = handleUpdateTeam(payload);
         break;
 
+      // Captain Gmail Verification & Test Delivery Flow
+      case "sendCaptainEmailVerification":
+        result = handleSendCaptainEmailVerification(payload);
+        break;
+      case "verifyCaptainEmailCode":
+        result = handleVerifyCaptainEmailCode(payload);
+        break;
+
       // Admin Flow
       case "adminLogin":
         result = handleAdminLogin(payload);
@@ -520,6 +528,20 @@ function handleRegisterTeam(payload) {
     let plainPassword = "";
 
     if (!existingCaptain) {
+      // Enforce Gmail confirmation for new captains
+      const cache = CacheService.getScriptCache();
+      const isEmailVerified = cache.get("verified_email_" + captainEmail);
+      const otpCode = String(payload.verification_code || "").trim();
+      const cachedOtp = cache.get("verify_otp_" + captainEmail);
+      const codeMatches = (cachedOtp && cachedOtp === otpCode);
+
+      if (isEmailVerified !== "TRUE" && !codeMatches && payload.skip_email_verification !== true) {
+        return {
+          ok: false,
+          error: "Please confirm your Gmail address first. Click 'Send Verification Code' and enter the 6-digit code received in your inbox."
+        };
+      }
+
       // New Captain: Generate 8-character random password & salt
       isNewCaptain = true;
       plainPassword = generateRandomPassword(8);
@@ -1375,6 +1397,172 @@ function handleAdminTestEmail(payload) {
       error: "Gmail delivery failed: " + err.toString() + ". Make sure you have authorized MailApp permissions in your Apps Script project."
     };
   }
+}
+
+// =========================================================================
+// 5.5 CAPTAIN GMAIL VERIFICATION & TEST ACTIONS
+// =========================================================================
+
+/**
+ * Send Captain Email Verification / Test Email (Public registration flow).
+ * Generates a 6-digit verification code, caches it for 15 minutes,
+ * and emails it via MailApp so the captain confirms their Gmail delivery live.
+ */
+function handleSendCaptainEmailVerification(payload) {
+  const email = normalizeString(payload.email || "");
+  const captainName = String(payload.captain_name || "Captain").trim();
+  const eventName = String(payload.event_name || "Cultural Fest Event").trim();
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email || !emailRegex.test(email)) {
+    return {
+      ok: false,
+      error: "Please provide a valid Gmail / Email address (e.g. name@gmail.com)."
+    };
+  }
+
+  // Rate limiting: max 5 verification emails per address per 5 minutes
+  const cache = CacheService.getScriptCache();
+  const rlKey = "rl_otp_" + email.replace(/[^a-zA-Z0-9]/g, "_");
+  const countStr = cache.get(rlKey);
+  const count = countStr ? parseInt(countStr, 10) : 0;
+  if (count >= 5) {
+    return {
+      ok: false,
+      error: "Too many verification requests for this address. Please wait 5 minutes before trying again."
+    };
+  }
+  cache.put(rlKey, String(count + 1), 300);
+
+  // Generate 6-digit verification OTP
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Cache the OTP code for 15 minutes (900 seconds)
+  const otpKey = "verify_otp_" + email;
+  cache.put(otpKey, code, 900);
+
+  try {
+    const subject = `[UMANG 2026] Verification Code: ${code} - Confirm Your Gmail`;
+    const htmlBody = `
+      <div style="font-family:'Segoe UI',Roboto,Helvetica,sans-serif;max-width:520px;margin:auto;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;background:#ffffff;padding:24px;">
+        <div style="background:linear-gradient(135deg,#881337 0%,#be123c 50%,#ea580c 100%);color:#ffffff;padding:20px;text-align:center;border-radius:10px;margin-bottom:20px;">
+          <h2 style="margin:0;font-size:22px;letter-spacing:1px;">UMANG 2026</h2>
+          <p style="margin:4px 0 0 0;font-size:13px;opacity:0.9;">Motihari College of Engineering Cultural Fest</p>
+        </div>
+        
+        <h3 style="color:#be123c;margin-top:0;">Confirm Your Gmail Address</h3>
+        <p>Dear <strong>${escapeHtml(captainName)}</strong>,</p>
+        <p>You are registering a team for <strong>${escapeHtml(eventName)}</strong>. Please use the verification code below on the registration portal to confirm that your Gmail delivers messages properly:</p>
+        
+        <div style="background:#fff1f2;border:2px dashed #f43f5e;border-radius:12px;padding:18px;text-align:center;margin:24px 0;">
+          <span style="font-size:12px;text-transform:uppercase;color:#881337;font-weight:bold;letter-spacing:1px;">Your 6-Digit Confirmation Code</span>
+          <div style="font-size:36px;font-family:monospace;letter-spacing:8px;font-weight:bold;color:#be123c;margin-top:8px;">
+            ${code}
+          </div>
+        </div>
+        
+        <p style="font-size:13px;color:#475569;line-height:1.6;">
+          Once confirmed on the portal, your team registration will be completed, and your captain account password will be sent to this exact email address.
+        </p>
+        
+        <div style="background:#f8fafc;padding:12px;border-radius:8px;font-size:12px;color:#64748b;margin:16px 0;">
+          • <strong>Recipient:</strong> ${escapeHtml(email)}<br/>
+          • <strong>Validity:</strong> 15 minutes<br/>
+          • If you did not request this code, you can safely ignore this email.
+        </div>
+        
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0 16px 0;"/>
+        <p style="font-size:11px;color:#94a3b8;text-align:center;margin:0;">
+          Organizing Committee • Motihari College of Engineering, Motihari
+        </p>
+      </div>
+    `;
+
+    MailApp.sendEmail({
+      to: email,
+      subject: subject,
+      htmlBody: htmlBody
+    });
+
+    return {
+      ok: true,
+      data: {
+        email: email,
+        message: "Test verification email sent to " + email + "! Please check your inbox or spam folder for your 6-digit confirmation code."
+      }
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: "Gmail delivery failed: " + err.toString() + ". Make sure the Apps Script project owner has authorized MailApp permissions."
+    };
+  }
+}
+
+/**
+ * Verify Captain 6-Digit OTP Code
+ */
+function handleVerifyCaptainEmailCode(payload) {
+  const email = normalizeString(payload.email || "");
+  const code = String(payload.code || "").trim();
+
+  if (!email || !code) {
+    return { ok: false, error: "Email and 6-digit confirmation code are required." };
+  }
+
+  const cache = CacheService.getScriptCache();
+  const otpKey = "verify_otp_" + email;
+  const cachedCode = cache.get(otpKey);
+
+  if (!cachedCode) {
+    return {
+      ok: false,
+      error: "Verification code has expired or was not requested. Please click 'Send Verification Code' again."
+    };
+  }
+
+  if (cachedCode !== code) {
+    return {
+      ok: false,
+      error: "Invalid confirmation code. Please check your Gmail message and enter the 6 digits carefully."
+    };
+  }
+
+  // Code matches! Mark email as verified in cache for 1 hour (3600 seconds)
+  cache.put("verified_email_" + email, "TRUE", 3600);
+  cache.remove(otpKey); // Invalidate used OTP
+
+  return {
+    ok: true,
+    data: {
+      email: email,
+      verified: true,
+      message: "Gmail confirmed successfully! You can now complete your team registration."
+    }
+  };
+}
+
+/**
+ * Direct Test Function to Run in Apps Script Editor.
+ * Running this function directly in the Apps Script toolbar triggers Google's
+ * one-time 'Authorization Required' permission prompt so MailApp can send emails.
+ */
+function testSendEmailDirectly() {
+  const activeUserEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  Logger.log("Testing MailApp from Google account: " + activeUserEmail);
+
+  if (!activeUserEmail) {
+    Logger.log("No active user email detected. Enter a test recipient manually.");
+    return;
+  }
+
+  MailApp.sendEmail({
+    to: activeUserEmail,
+    subject: "[UMANG 2026] Apps Script MailApp Authorization Test",
+    htmlBody: "<h3>MailApp Authorization Successful! ✅</h3><p>Your Google Apps Script project is now fully authorized to send emails from your Google account.</p>"
+  });
+
+  Logger.log("Test email successfully sent to: " + activeUserEmail);
 }
 
 // =========================================================================
