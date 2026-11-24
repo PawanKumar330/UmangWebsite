@@ -134,6 +134,9 @@ function doPost(e) {
       case "searchStudents":
         result = handleSearchStudents(payload);
         break;
+      case "verifyCaptain":
+        result = handleVerifyCaptain(payload);
+        break;
       case "registerTeam":
         result = handleRegisterTeam(payload);
         break;
@@ -303,6 +306,52 @@ function handleSearchStudents(payload) {
   }
 
   return { ok: true, data: results };
+}
+
+/**
+ * Verify Captain exists in Event Source Sheet.
+ */
+function handleVerifyCaptain(payload) {
+  const eventId = String(payload.event_id || "").trim();
+  const identifier = normalizeString(payload.identifier || payload.query || "");
+
+  if (!eventId) return { ok: false, error: "Event ID is required." };
+  if (!identifier) return { ok: false, error: "Identifier (Roll No or Name) is required." };
+
+  const event = getEventRecord(eventId);
+  if (!event) return { ok: false, error: "Event not found." };
+
+  const students = getSourceSheetStudents(event.source_sheet_id, event.source_tab_name);
+  if (!students || students.length === 0) {
+    return { ok: false, error: "No participant records found in event form responses sheet." };
+  }
+
+  const match = students.find(s => 
+    normalizeString(s.roll) === identifier ||
+    normalizeString(s.name) === identifier ||
+    (s.email && normalizeString(s.email) === identifier)
+  );
+
+  if (match) {
+    return {
+      ok: true,
+      data: {
+        found: true,
+        student: {
+          name: match.name,
+          roll: match.roll,
+          email: maskEmail(match.email),
+          branch: match.branch,
+          is_captain: true
+        }
+      }
+    };
+  }
+
+  return {
+    ok: false,
+    error: "Participant not found in the Google Form submissions for this event. Ensure you filled the individual participant form."
+  };
 }
 
 /**

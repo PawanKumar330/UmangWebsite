@@ -238,19 +238,30 @@ export default function RegisterTeamPage() {
     setCaptainError("");
 
     try {
-      const res = await callApi<{ found: boolean; student: Student }>({
-        action: "verifyCaptain",
+      const res = await callApi<Student[]>({
+        action: "searchStudents",
         event_id: selectedEventId,
-        identifier: trimmedId,
+        query: trimmedId,
       });
 
-      if (res.ok && res.data && res.data.found) {
-        setCaptainVerified(res.data.student);
+      if (res.ok && res.data && res.data.length > 0) {
+        // Find exact match by roll or name
+        const exact = res.data.find(
+          (s) =>
+            s.roll.toLowerCase() === trimmedId.toLowerCase() ||
+            s.name.toLowerCase() === trimmedId.toLowerCase()
+        );
+        const match = exact || res.data[0];
+
+        setCaptainVerified({
+          ...match,
+          is_captain: true,
+        });
+        setCaptainError("");
       } else {
         setCaptainVerified(null);
         setCaptainError(
-          res.error ||
-            "Participant not found in the Google Form submissions for this event. Ensure you filled the individual participant form."
+          "Participant not found in the Google Form submissions for this event. Ensure you filled the individual participant form."
         );
       }
     } catch (err: any) {

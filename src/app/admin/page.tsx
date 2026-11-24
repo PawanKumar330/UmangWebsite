@@ -16,8 +16,6 @@ import {
   Loader2,
   LogOut,
   Edit,
-  ExternalLink,
-  ChevronRight,
   Filter,
   Eye,
   X,
@@ -131,10 +129,10 @@ export default function AdminPage() {
         setAdminToken(res.data.token);
         fetchAdminData(res.data.token);
       } else {
-        setLoginError(res.error || "Invalid admin password.");
+        setLoginError(res.error || "Invalid admin credentials.");
       }
     } catch (err: any) {
-      setLoginError(err.message || "Failed to authenticate admin.");
+      setLoginError(err.message || "Failed to authenticate administrator.");
     } finally {
       setLoginLoading(false);
     }
@@ -167,7 +165,7 @@ export default function AdminPage() {
   // Inspect Source Sheet
   const handleInspectSheet = async () => {
     if (!adminToken || !eventFormData.source_sheet_id.trim()) {
-      setEventModalMsg({ type: "error", text: "Please enter a Source Sheet ID or Google Sheets URL." });
+      setEventModalMsg({ type: "error", text: "Please enter a source sheet ID or Google Sheets URL." });
       return;
     }
 
@@ -176,7 +174,6 @@ export default function AdminPage() {
     setEventModalMsg(null);
 
     try {
-      // Test searchStudents on this event to verify live reading
       const res = await callApi({
         action: "searchStudents",
         event_id: editingEventId || eventFormData.event_id || "EVT-1795456652144",
@@ -190,7 +187,7 @@ export default function AdminPage() {
           sample_students: res.data.slice(0, 5),
           status_note:
             res.data.length > 0
-              ? "Students verified and recognized from sheet!"
+              ? "Students verified and recognized from sheet."
               : "Connected, but 0 students returned. Make sure the tab name or GID matches your Google Form responses tab.",
         });
       } else {
@@ -204,7 +201,6 @@ export default function AdminPage() {
   };
 
   const handleSourceSheetInput = (val: string) => {
-    // Check if full Google Sheets URL
     const matchId = val.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
     const matchGid = val.match(/[?&#]gid=([0-9]+)/);
 
@@ -264,7 +260,7 @@ export default function AdminPage() {
       });
 
       if (res.ok) {
-        setEventModalMsg({ type: "success", text: "Event saved successfully in Portal DB!" });
+        setEventModalMsg({ type: "success", text: "Event saved successfully." });
         fetchAdminData(adminToken);
         setTimeout(() => setEventModalOpen(false), 1200);
       } else {
@@ -322,7 +318,7 @@ export default function AdminPage() {
       });
 
       if (res.ok) {
-        setNoticeResult({ type: "success", text: "Notice posted successfully to public bulletin!" });
+        setNoticeResult({ type: "success", text: "Notice published successfully." });
         setNoticeForm({ title: "", body: "", event_id: "ALL", type: "notice" });
         fetchAdminData(adminToken);
       } else {
@@ -338,7 +334,7 @@ export default function AdminPage() {
   const handleDeleteTeam = async (teamId: string, teamName: string) => {
     if (!adminToken) return;
     const confirmed = window.confirm(
-      `Are you sure you want to permanently delete team "${teamName}" (${teamId})?\n\nThis will remove the team and allow its members to join other teams.`
+      `Permanently delete team "${teamName}" (${teamId})? Members will be freed to join other squads.`
     );
     if (!confirmed) return;
 
@@ -351,7 +347,7 @@ export default function AdminPage() {
       });
 
       if (res.ok) {
-        alert(res.data?.message || `Team ${teamName} deleted successfully.`);
+        alert(res.data?.message || `Team ${teamName} deleted.`);
         if (viewingTeam?.team_id === teamId) setViewingTeam(null);
         fetchAdminData(adminToken);
       } else {
@@ -381,20 +377,20 @@ export default function AdminPage() {
       if (res.ok && res.data) {
         setTestEmailResult({
           type: "success",
-          text: res.data.message || `Test email dispatched to ${testEmailAddress}!`,
+          text: res.data.message || `Test email dispatched to ${testEmailAddress}.`,
         });
       } else {
         setTestEmailResult({
           type: "error",
           text: res.error || "Gmail delivery test failed.",
           details:
-            "Make sure you authorized MailApp permissions in your Apps Script and created a 'New version' deployment.",
+            "Confirm that MailApp permissions are authorized in Apps Script and that a New Version deployment is active.",
         });
       }
     } catch (err: any) {
       setTestEmailResult({
         type: "error",
-        text: err.message || "Network error while calling adminTestEmail.",
+        text: err.message || "Network error while running email test.",
       });
     } finally {
       setTestingEmail(false);
@@ -416,40 +412,40 @@ export default function AdminPage() {
   // 1. ADMIN LOGIN VIEW
   if (!adminToken) {
     return (
-      <div className="max-w-md mx-auto py-12 space-y-6">
+      <div className="max-w-md mx-auto py-10 space-y-6">
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 rounded-2xl bg-festive-maroon-900 text-festive-gold-400 mx-auto flex items-center justify-center shadow-lg">
-            <Shield className="w-7 h-7" />
+          <div className="w-10 h-10 rounded-md bg-[#240c13] text-stone-200 mx-auto flex items-center justify-center">
+            <Shield className="w-5 h-5" />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-serif text-stone-900 tracking-tight font-normal">
             Admin Authentication
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Motihari College of Engineering • UMANG 2026 Fest Committee
+          <p className="text-xs text-stone-500">
+            Motihari College of Engineering • UMANG 2026 Committee
           </p>
         </div>
 
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 space-y-5">
+        <div className="bg-white rounded-lg p-6 sm:p-7 shadow-sm border border-stone-200 space-y-4">
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                Admin Master Password
+              <label className="text-xs font-medium text-stone-700">
+                Master password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
-                  placeholder="Enter admin password..."
+                  placeholder="Enter administrator password..."
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
+                  className="w-full pl-9 pr-3.5 py-2.5 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900"
                   required
                 />
               </div>
             </div>
 
             {loginError && (
-              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+              <div className="p-2.5 rounded-md bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>{loginError}</span>
               </div>
@@ -458,23 +454,21 @@ export default function AdminPage() {
             <button
               type="submit"
               disabled={loginLoading}
-              className="w-full py-3.5 rounded-2xl font-bold text-white text-sm bg-gradient-to-r from-festive-maroon-800 to-festive-saffron-700 hover:opacity-95 transition shadow-lg disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-2.5 rounded-md font-medium text-white text-sm bg-[#831830] hover:bg-[#6e192c] transition-colors shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loginLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Verifying Admin...
+                  <Loader2 className="w-4 h-4 animate-spin" /> Authenticating...
                 </>
               ) : (
-                <>
-                  <Shield className="w-4 h-4 text-festive-gold-300" /> Enter Admin Panel
-                </>
+                "Access Admin Console"
               )}
             </button>
           </form>
 
-          <div className="pt-2 text-center text-xs text-slate-400">
-            Protected area. Master password is kept in Apps Script Script Properties.
-          </div>
+          <p className="pt-2 text-center text-[11px] text-stone-400">
+            Master credential authenticated against Apps Script environment properties.
+          </p>
         </div>
       </div>
     );
@@ -482,82 +476,82 @@ export default function AdminPage() {
 
   // 2. AUTHENTICATED ADMIN DASHBOARD
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-6xl mx-auto">
       {/* Top Banner */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white rounded-lg p-5 sm:p-6 shadow-sm border border-stone-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-festive-maroon-900 text-festive-gold-300 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-              <Shield className="w-3 h-3" /> Fest Administrator
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-stone-900 text-stone-100 flex items-center gap-1">
+              <Shield className="w-3 h-3 text-amber-400" /> Fest Coordinator Desk
             </span>
-            <span className="text-xs text-slate-400">MCE Motihari Portal DB</span>
+            <span className="text-xs text-stone-500 font-mono">UMANG 2026</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-            Admin Control Center
+          <h1 className="text-xl sm:text-2xl font-serif text-stone-900 font-normal">
+            Festival Administration Console
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Configure events, manage Google Form source sheets, reset captain credentials, and inspect team rosters.
+          <p className="text-xs text-stone-600">
+            Event configurations, Google Form source mappings, squad rosters, and bulletin broadcasts.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => fetchAdminData(adminToken)}
             disabled={loadingData}
-            className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+            className="px-3 py-1.5 rounded-md border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50 transition-colors"
           >
-            {loadingData ? "Refreshing..." : "Refresh Data"}
+            {loadingData ? "Refreshing..." : "Refresh data"}
           </button>
           <button
             onClick={handleAdminLogout}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 transition-colors"
           >
-            <LogOut className="w-4 h-4" /> Logout
+            <LogOut className="w-3.5 h-3.5" /> Logout
           </button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-festive-maroon-50 text-festive-maroon-700 flex items-center justify-center font-bold">
-            <Calendar className="w-6 h-6" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+        <div className="bg-white rounded-lg p-4 border border-stone-200 shadow-sm flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-md bg-stone-100 text-stone-800 flex items-center justify-center">
+            <Calendar className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-slate-900">{events.length}</div>
-            <div className="text-xs text-slate-500 font-medium">Cultural Events</div>
+            <div className="text-xl font-semibold text-stone-900 tabular-nums">{events.length}</div>
+            <div className="text-xs text-stone-500 font-normal">Cultural competitions</div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-festive-gold-50 text-amber-700 flex items-center justify-center font-bold">
-            <Users className="w-6 h-6" />
+        <div className="bg-white rounded-lg p-4 border border-stone-200 shadow-sm flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-md bg-stone-100 text-stone-800 flex items-center justify-center">
+            <Users className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-slate-900">{teams.length}</div>
-            <div className="text-xs text-slate-500 font-medium">Registered Teams</div>
+            <div className="text-xl font-semibold text-stone-900 tabular-nums">{teams.length}</div>
+            <div className="text-xs text-stone-500 font-normal">Registered squads</div>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-festive-saffron-50 text-festive-saffron-700 flex items-center justify-center font-bold">
-            <Bell className="w-6 h-6" />
+        <div className="bg-white rounded-lg p-4 border border-stone-200 shadow-sm flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-md bg-stone-100 text-stone-800 flex items-center justify-center">
+            <Bell className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-slate-900">{notices.length}</div>
-            <div className="text-xs text-slate-500 font-medium">Bulletins & Notices</div>
+            <div className="text-xl font-semibold text-stone-900 tabular-nums">{notices.length}</div>
+            <div className="text-xs text-stone-500 font-normal">Bulletins published</div>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+      <div className="flex items-center gap-1 border-b border-stone-200 pb-2 overflow-x-auto">
         {[
           { id: "events", label: "Manage Events", icon: Calendar },
           { id: "teams", label: `Teams Roster (${teams.length})`, icon: Users },
           { id: "email", label: "Gmail Service Test", icon: Mail },
-          { id: "reset", label: "Reset Captain Password", icon: KeyRound },
-          { id: "notices", label: "Post Bulletins", icon: Bell },
+          { id: "reset", label: "Reset Password", icon: KeyRound },
+          { id: "notices", label: "Publish Bulletins", icon: Bell },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -565,13 +559,13 @@ export default function AdminPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
                 isActive
-                  ? "bg-festive-maroon-700 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-slate-100"
+                  ? "bg-stone-900 text-white"
+                  : "text-stone-600 hover:bg-stone-100"
               }`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="w-3.5 h-3.5" />
               {tab.label}
             </button>
           );
@@ -581,58 +575,57 @@ export default function AdminPage() {
       {/* TAB 1: MANAGE EVENTS */}
       {activeTab === "events" && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <p className="text-xs sm:text-sm text-slate-500">
-              Each event maps to its own Google Form responses sheet ID.
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <p className="text-xs text-stone-500">
+              Each competition maps to its respective Google Form responses sheet ID.
             </p>
             <button
               onClick={() => openEventModal()}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-festive-maroon-700 hover:bg-festive-maroon-800 shadow-sm"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-[#831830] hover:bg-[#6e192c] shadow-sm self-start sm:self-auto"
             >
-              <Plus className="w-4 h-4" /> Add Cultural Event
+              <Plus className="w-3.5 h-3.5" /> Add Cultural Event
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {events.map((evt) => (
               <div
                 key={evt.event_id}
-                className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between"
+                className="bg-white rounded-lg p-5 border border-stone-200 shadow-sm space-y-3.5 flex flex-col justify-between"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span
-                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded ${
                         evt.is_open
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : "bg-rose-50 text-rose-700 border border-rose-200"
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                          : "bg-stone-100 text-stone-600 border border-stone-200"
                       }`}
                     >
-                      {evt.is_open ? "Registration Open" : "Registration Closed"}
+                      {evt.is_open ? "Open" : "Closed"}
                     </span>
-                    <span className="text-xs text-slate-400 font-mono">{evt.event_id}</span>
+                    <span className="text-xs text-stone-400 font-mono">{evt.event_id}</span>
                   </div>
 
-                  <h3 className="text-base font-bold text-slate-900">{evt.event_name}</h3>
+                  <h3 className="text-base font-semibold text-stone-900">{evt.event_name}</h3>
 
-                  <div className="space-y-1 text-xs text-slate-600">
+                  <div className="space-y-1 text-xs text-stone-600">
                     <div className="flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-slate-400" />
+                      <Users className="w-3.5 h-3.5 text-stone-400" />
                       <span>
-                        Squad limits: <strong>{evt.min_team_size}</strong> to{" "}
-                        <strong>{evt.max_team_size}</strong> members
+                        Squad limits: <strong className="font-medium text-stone-900">{evt.min_team_size}</strong> to{" "}
+                        <strong className="font-medium text-stone-900">{evt.max_team_size}</strong> members
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <Clock className="w-3.5 h-3.5 text-stone-400" />
                       <span>
                         Deadline:{" "}
-                        <strong>
+                        <strong className="font-medium text-stone-900 tabular-nums">
                           {new Date(evt.deadline).toLocaleDateString("en-IN", {
                             day: "numeric",
                             month: "short",
-                            year: "numeric",
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
@@ -640,19 +633,19 @@ export default function AdminPage() {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-500 truncate pt-1">
-                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>Source ID: {evt.source_sheet_id || "(Not configured yet)"}</span>
+                    <div className="flex items-center gap-1.5 font-mono text-[11px] text-stone-500 truncate pt-1">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+                      <span>Source: {evt.source_sheet_id || "(Not configured yet)"}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-end">
+                <div className="pt-2.5 border-t border-stone-100 flex items-center justify-end">
                   <button
                     onClick={() => openEventModal(evt)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-festive-maroon-700 bg-festive-maroon-50 hover:bg-festive-maroon-100"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-stone-800 bg-stone-100 hover:bg-stone-200 transition-colors"
                   >
-                    <Edit className="w-3.5 h-3.5" /> Edit Event Config
+                    <Edit className="w-3.5 h-3.5 text-stone-500" /> Edit configuration
                   </button>
                 </div>
               </div>
@@ -663,28 +656,28 @@ export default function AdminPage() {
 
       {/* TAB 2: TEAMS ROSTER */}
       {activeTab === "teams" && (
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {/* Filter Bar */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="bg-white rounded-lg p-3 border border-stone-200 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search team name, captain email, member roll/name..."
+                placeholder="Search team name, captain email, or roll..."
                 value={teamSearch}
                 onChange={(e) => setTeamSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium focus:outline-none focus:ring-2 focus:ring-festive-maroon-700"
+                className="w-full pl-8 pr-3.5 py-1.5 rounded-md border border-stone-300 text-xs sm:text-sm text-stone-900 focus:outline-none focus:border-[#831830]"
               />
             </div>
 
             <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-slate-400" />
+              <Filter className="w-3.5 h-3.5 text-stone-400" />
               <select
                 value={selectedEventFilter}
                 onChange={(e) => setSelectedEventFilter(e.target.value)}
-                className="px-3 py-2 rounded-xl border border-slate-300 text-xs sm:text-sm font-medium bg-slate-50"
+                className="px-2.5 py-1.5 rounded-md border border-stone-300 text-xs font-medium bg-stone-50"
               >
-                <option value="ALL">All Events ({teams.length})</option>
+                <option value="ALL">All events ({teams.length})</option>
                 {events.map((evt) => (
                   <option key={evt.event_id} value={evt.event_id}>
                     {evt.event_name}
@@ -695,68 +688,66 @@ export default function AdminPage() {
           </div>
 
           {/* Teams Table */}
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[11px] tracking-wider">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 border-b border-stone-200 text-stone-600 font-medium uppercase text-[11px]">
                   <tr>
-                    <th className="px-5 py-3.5">Team ID & Name</th>
-                    <th className="px-5 py-3.5">Event</th>
-                    <th className="px-5 py-3.5">Captain Email</th>
-                    <th className="px-5 py-3.5">Members</th>
-                    <th className="px-5 py-3.5">Status</th>
-                    <th className="px-5 py-3.5 text-right">Actions</th>
+                    <th className="px-4 py-2.5">Team</th>
+                    <th className="px-4 py-2.5">Event</th>
+                    <th className="px-4 py-2.5">Captain Email</th>
+                    <th className="px-4 py-2.5">Roster</th>
+                    <th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-stone-100">
                   {filteredTeams.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-5 py-10 text-center text-slate-400">
+                      <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
                         No registered teams found.
                       </td>
                     </tr>
                   ) : (
                     filteredTeams.map((team) => (
-                      <tr key={team.team_id} className="hover:bg-slate-50/70 transition">
-                        <td className="px-5 py-3.5">
-                          <div className="font-bold text-slate-900">{team.team_name}</div>
-                          <div className="text-[11px] font-mono text-slate-400">{team.team_id}</div>
+                      <tr key={team.team_id} className="hover:bg-stone-50/70">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-stone-900">{team.team_name}</div>
+                          <div className="text-[11px] font-mono text-stone-400">{team.team_id}</div>
                         </td>
-                        <td className="px-5 py-3.5">
-                          <span className="text-xs font-semibold text-slate-800">
-                            {team.event_name || team.event_id}
-                          </span>
+                        <td className="px-4 py-3 font-medium text-stone-800">
+                          {team.event_name || team.event_id}
                         </td>
-                        <td className="px-5 py-3.5 font-mono text-xs text-slate-600">
+                        <td className="px-4 py-3 font-mono text-stone-600">
                           {team.captain_email}
                         </td>
-                        <td className="px-5 py-3.5">
-                          <span className="font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs">
-                            {team.members.length} Members
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-stone-700 bg-stone-100 px-2 py-0.5 rounded">
+                            {team.members.length} members
                           </span>
                         </td>
-                        <td className="px-5 py-3.5">
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <td className="px-4 py-3">
+                          <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
                             {team.status}
                           </span>
                         </td>
-                        <td className="px-5 py-3.5 text-right whitespace-nowrap space-x-2">
+                        <td className="px-4 py-3 text-right whitespace-nowrap space-x-1.5">
                           <button
                             onClick={() => setViewingTeam(team)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-festive-maroon-700 bg-festive-maroon-50 hover:bg-festive-maroon-100 transition"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-stone-800 bg-stone-100 hover:bg-stone-200"
                           >
-                            <Eye className="w-3.5 h-3.5" /> View Squad
+                            <Eye className="w-3 h-3 text-stone-500" /> View
                           </button>
                           <button
                             onClick={() => handleDeleteTeam(team.team_id, team.team_name)}
                             disabled={deletingTeamId === team.team_id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition disabled:opacity-50"
-                            title="Delete this team permanently"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-50"
+                            title="Delete this team"
                           >
                             {deletingTeamId === team.team_id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <Loader2 className="w-3 h-3 animate-spin" />
                             ) : (
-                              <Trash2 className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3 h-3" />
                             )}
                             Delete
                           </button>
@@ -773,46 +764,33 @@ export default function AdminPage() {
 
       {/* TAB: GMAIL SERVICE TEST */}
       {activeTab === "email" && (
-        <div className="max-w-2xl mx-auto space-y-6">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-            <div className="border-b border-slate-100 pb-4">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-festive-maroon-50 text-festive-maroon-700 text-xs font-bold uppercase tracking-wider mb-2">
-                <Mail className="w-3.5 h-3.5" /> Email Delivery Diagnostics
-              </div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900">
-                Test Gmail Service & MailApp Delivery
+        <div className="max-w-xl mx-auto space-y-4">
+          <div className="bg-white rounded-lg p-5 sm:p-6 border border-stone-200 shadow-sm space-y-4">
+            <div className="border-b border-stone-100 pb-3">
+              <p className="text-xs font-mono uppercase text-stone-500 mb-1">
+                Diagnostics
+              </p>
+              <h2 className="text-lg font-semibold text-stone-900">
+                Gmail & MailApp Delivery Test
               </h2>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                Verify that your deployed Google Apps Script has authorized Gmail permissions and is sending emails to captains properly.
+              <p className="text-xs text-stone-500 mt-0.5">
+                Dispatch an immediate test email to verify that Google Apps Script sends emails properly.
               </p>
             </div>
 
-            {/* How it works info box */}
-            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-2 text-xs text-amber-900">
-              <div className="font-bold flex items-center gap-2">
-                <Check className="w-4 h-4 text-amber-700" />
-                How Captain Passwords & Emails are Sent:
-              </div>
-              <ul className="list-disc pl-5 space-y-1 text-amber-800">
-                <li>When a new captain registers, Apps Script uses <strong>MailApp.sendEmail</strong> from the Google account that published the Web App.</li>
-                <li>The email contains the team details and an auto-generated 8-character password.</li>
-                <li>Enter your personal or test email below to confirm that delivery works right now.</li>
-              </ul>
-            </div>
-
-            <form onSubmit={handleTestEmail} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                  Recipient Test Email Address *
+            <form onSubmit={handleTestEmail} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-700">
+                  Recipient test email address *
                 </label>
                 <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <Mail className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="email"
-                    placeholder="Enter email to receive test message (e.g. yourname@gmail.com)"
+                    placeholder="yourname@gmail.com"
                     value={testEmailAddress}
                     onChange={(e) => setTestEmailAddress(e.target.value)}
-                    className="w-full pl-11 pr-4 py-3.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
+                    className="w-full pl-8 pr-3.5 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-xs sm:text-sm text-stone-900"
                     required
                   />
                 </div>
@@ -820,27 +798,22 @@ export default function AdminPage() {
 
               {testEmailResult && (
                 <div
-                  className={`p-4 rounded-2xl text-xs sm:text-sm space-y-1.5 ${
+                  className={`p-3 rounded-md text-xs space-y-1 ${
                     testEmailResult.type === "success"
                       ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
                       : "bg-rose-50 text-rose-900 border border-rose-200"
                   }`}
                 >
-                  <div className="flex items-start gap-2.5 font-bold">
+                  <div className="flex items-start gap-2 font-medium">
                     {testEmailResult.type === "success" ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     ) : (
-                      <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     )}
                     <span>{testEmailResult.text}</span>
                   </div>
                   {testEmailResult.details && (
-                    <p className="text-xs text-rose-700 pl-7">{testEmailResult.details}</p>
-                  )}
-                  {testEmailResult.type === "success" && (
-                    <p className="text-xs text-emerald-700 pl-7">
-                      Please check your <strong>Inbox</strong> (and also the <strong>Spam / Promotions</strong> folder).
-                    </p>
+                    <p className="text-[11px] text-rose-700 pl-6">{testEmailResult.details}</p>
                   )}
                 </div>
               )}
@@ -848,15 +821,15 @@ export default function AdminPage() {
               <button
                 type="submit"
                 disabled={testingEmail || !testEmailAddress.trim()}
-                className="w-full py-4 rounded-2xl font-bold text-white text-sm bg-festive-maroon-700 hover:bg-festive-maroon-800 transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-festive-maroon-700/20"
+                className="w-full py-2.5 rounded-md font-medium text-white text-xs sm:text-sm bg-[#831830] hover:bg-[#6e192c] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
               >
                 {testingEmail ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Dispatching Test Email via Google Apps Script...
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Dispatching test message...
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" /> Send Live Test Email
+                    <Send className="w-3.5 h-3.5 text-amber-200" /> Send test email
                   </>
                 )}
               </button>
@@ -867,37 +840,36 @@ export default function AdminPage() {
 
       {/* TAB 3: RESET CAPTAIN PASSWORD */}
       {activeTab === "reset" && (
-        <div className="max-w-xl mx-auto space-y-6">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
+        <div className="max-w-lg mx-auto space-y-4">
+          <div className="bg-white rounded-lg p-5 sm:p-6 border border-stone-200 shadow-sm space-y-4">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-festive-maroon-700" />
+              <h2 className="text-base font-semibold text-stone-900 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-[#831830]" />
                 Reset Captain Login Password
               </h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Enter the captain's email address. The backend will generate a new random 8-character password,
-                update the SHA-256 hash in the Captains tab, and email the plain password to the captain via Gmail.
+              <p className="text-xs text-stone-500 mt-1">
+                Generates a new random 8-character password, updates the SHA-256 hash, and emails the new password to the captain.
               </p>
             </div>
 
-            <form onSubmit={handleResetPassword} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                  Captain Email
+            <form onSubmit={handleResetPassword} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-700">
+                  Captain email address
                 </label>
                 <input
                   type="email"
-                  placeholder="e.g. prashant.kumar@gmail.com"
+                  placeholder="name@gmail.com"
                   value={resetCaptainEmail}
                   onChange={(e) => setResetCaptainEmail(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
+                  className="w-full px-3 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900"
                   required
                 />
               </div>
 
               {resetResult && (
                 <div
-                  className={`p-3.5 rounded-2xl text-xs sm:text-sm flex items-start gap-2.5 ${
+                  className={`p-3 rounded-md text-xs flex items-start gap-2 ${
                     resetResult.type === "success"
                       ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                       : "bg-rose-50 text-rose-800 border border-rose-200"
@@ -915,16 +887,14 @@ export default function AdminPage() {
               <button
                 type="submit"
                 disabled={resetLoading}
-                className="w-full py-3.5 rounded-2xl font-bold text-white text-sm bg-festive-maroon-700 hover:bg-festive-maroon-800 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-md font-medium text-white text-xs sm:text-sm bg-[#831830] hover:bg-[#6e192c] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
               >
                 {resetLoading ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Generating & Sending New Password...
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating password...
                   </>
                 ) : (
-                  <>
-                    <KeyRound className="w-4 h-4" /> Generate & Email New Password
-                  </>
+                  "Generate and email password"
                 )}
               </button>
             </form>
@@ -934,30 +904,30 @@ export default function AdminPage() {
 
       {/* TAB 4: POST NOTICES & SCHEDULES */}
       {activeTab === "notices" && (
-        <div className="max-w-2xl mx-auto space-y-6">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
+        <div className="max-w-xl mx-auto space-y-4">
+          <div className="bg-white rounded-lg p-5 sm:p-6 border border-stone-200 shadow-sm space-y-4">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <Bell className="w-5 h-5 text-festive-maroon-700" />
-                Publish Fest Notice / Schedule / Result
+              <h2 className="text-base font-semibold text-stone-900 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-[#831830]" />
+                Publish Fest Bulletin or Schedule
               </h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Posted items immediately appear on the public notices board and in registered captains' dashboards.
+              <p className="text-xs text-stone-500 mt-1">
+                Announcements immediately display on the public notices board and in captains' dashboards.
               </p>
             </div>
 
-            <form onSubmit={handlePostNotice} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                    Target Event
+            <form onSubmit={handlePostNotice} className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-700">
+                    Target event
                   </label>
                   <select
                     value={noticeForm.event_id}
                     onChange={(e) => setNoticeForm({ ...noticeForm, event_id: e.target.value })}
-                    className="w-full px-3.5 py-3 rounded-2xl border border-slate-300 text-xs sm:text-sm font-medium bg-slate-50"
+                    className="w-full px-2.5 py-2 rounded-md border border-stone-300 text-xs font-medium bg-stone-50"
                   >
-                    <option value="ALL">ALL Events (General Fest Notice)</option>
+                    <option value="ALL">All events (General notice)</option>
                     {events.map((evt) => (
                       <option key={evt.event_id} value={evt.event_id}>
                         {evt.event_name}
@@ -966,14 +936,14 @@ export default function AdminPage() {
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-700">
                     Type
                   </label>
                   <select
                     value={noticeForm.type}
                     onChange={(e) => setNoticeForm({ ...noticeForm, type: e.target.value })}
-                    className="w-full px-3.5 py-3 rounded-2xl border border-slate-300 text-xs sm:text-sm font-medium bg-slate-50"
+                    className="w-full px-2.5 py-2 rounded-md border border-stone-300 text-xs font-medium bg-stone-50"
                   >
                     <option value="notice">Official Notice</option>
                     <option value="schedule">Schedule / Slot</option>
@@ -982,37 +952,37 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-700">
                   Title
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Battle of Bands Sound Check Schedule"
+                  placeholder="e.g. Stage Sound Check Slot"
                   value={noticeForm.title}
                   onChange={(e) => setNoticeForm({ ...noticeForm, title: e.target.value })}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-semibold"
+                  className="w-full px-3 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900"
                   required
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                  Body Content
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-700">
+                  Body content
                 </label>
                 <textarea
                   rows={4}
-                  placeholder="Enter notice details, reporting timings, guidelines..."
+                  placeholder="Enter reporting times, slots, or guidelines..."
                   value={noticeForm.body}
                   onChange={(e) => setNoticeForm({ ...noticeForm, body: e.target.value })}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
+                  className="w-full px-3 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900"
                   required
                 />
               </div>
 
               {noticeResult && (
                 <div
-                  className={`p-3 rounded-2xl text-xs sm:text-sm flex items-center gap-2 ${
+                  className={`p-2.5 rounded-md text-xs flex items-center gap-2 ${
                     noticeResult.type === "success"
                       ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                       : "bg-rose-50 text-rose-800 border border-rose-200"
@@ -1030,16 +1000,14 @@ export default function AdminPage() {
               <button
                 type="submit"
                 disabled={postingNotice}
-                className="w-full py-3.5 rounded-2xl font-bold text-white text-sm bg-festive-maroon-700 hover:bg-festive-maroon-800 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-md font-medium text-white text-xs sm:text-sm bg-[#831830] hover:bg-[#6e192c] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
               >
                 {postingNotice ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Publishing Notice...
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Publishing...
                   </>
                 ) : (
-                  <>
-                    <Bell className="w-4 h-4" /> Publish Notice to Portal
-                  </>
+                  "Publish bulletin to portal"
                 )}
               </button>
             </form>
@@ -1049,24 +1017,24 @@ export default function AdminPage() {
 
       {/* EVENT EDIT / ADD MODAL */}
       {eventModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-5 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-xl font-extrabold text-slate-900">
-                {editingEventId ? "Edit Cultural Event" : "Create New Cultural Event"}
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg w-full max-w-lg p-5 sm:p-6 shadow-xl border border-stone-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <h3 className="text-base font-semibold text-stone-900">
+                {editingEventId ? "Edit Cultural Event" : "Create Cultural Event"}
               </h3>
               <button
                 onClick={() => setEventModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600"
+                className="p-1 rounded-md text-stone-400 hover:text-stone-700"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEvent} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                  Event Name *
+            <form onSubmit={handleSaveEvent} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-700">
+                  Event name *
                 </label>
                 <input
                   type="text"
@@ -1075,129 +1043,87 @@ export default function AdminPage() {
                   onChange={(e) =>
                     setEventFormData({ ...eventFormData, event_name: e.target.value })
                   }
-                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-sm font-semibold"
+                  className="w-full px-3 py-2 rounded-md border border-stone-300 text-sm text-stone-900"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-700">
                     Source Google Sheet ID or URL
                   </label>
                   <input
                     type="text"
-                    placeholder="Paste ID or full Google Sheet URL..."
+                    placeholder="Sheet ID or full URL..."
                     value={eventFormData.source_sheet_id}
                     onChange={(e) => handleSourceSheetInput(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-xs font-mono"
+                    className="w-full px-3 py-2 rounded-md border border-stone-300 text-xs font-mono"
                   />
-                  <p className="text-[10px] text-slate-400">
-                    Paste ID or full URL (e.g. https://docs.google.com/spreadsheets/d/.../edit?gid=...)
-                  </p>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-700">
                     Tab Name or GID
                   </label>
                   <input
                     type="text"
-                    placeholder="Form Responses 1 or GID (e.g. 944636428)"
+                    placeholder="Form Responses 1 or GID"
                     value={eventFormData.source_tab_name}
                     onChange={(e) =>
                       setEventFormData({ ...eventFormData, source_tab_name: e.target.value })
                     }
-                    className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-xs font-medium"
+                    className="w-full px-3 py-2 rounded-md border border-stone-300 text-xs"
                   />
-                  <p className="text-[10px] text-slate-400">
-                    Tab title or numeric GID from sheet URL.
-                  </p>
                 </div>
               </div>
 
-              {/* Inspect / Test Sheet Button */}
+              {/* Inspect / Test Sheet */}
               {eventFormData.source_sheet_id && (
                 <div className="space-y-2">
                   <button
                     type="button"
                     onClick={handleInspectSheet}
                     disabled={inspectingSheet}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 transition-colors"
                   >
                     {inspectingSheet ? (
                       <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-festive-maroon-700" />
-                        Testing Connection to Sheet...
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-[#831830]" />
+                        Testing sheet connection...
                       </>
                     ) : (
                       <>
-                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                        Test Sheet Connection & Verify Columns
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-stone-500" />
+                        Test sheet connection & mapping
                       </>
                     )}
                   </button>
 
-                  {/* Inspection Results Box */}
                   {inspectResult && (
-                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2 animate-in fade-in">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                        <span className="font-bold text-slate-800">
+                    <div className="p-3 rounded-md bg-stone-50 border border-stone-200 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between border-b border-stone-200 pb-1">
+                        <span className="font-medium text-stone-800">
                           {inspectResult.spreadsheet_title || "Sheet Connected"}
                         </span>
-                        <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
-                          {inspectResult.total_students_found} Student Records Found
+                        <span className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 text-[11px]">
+                          {inspectResult.total_students_found} records found
                         </span>
                       </div>
-
                       {inspectResult.status_note && (
-                        <p className="text-[11px] text-slate-600 font-medium">
+                        <p className="text-[11px] text-stone-600">
                           {inspectResult.status_note}
                         </p>
-                      )}
-
-                      {inspectResult.detected_mapping && (
-                        <div className="grid grid-cols-2 gap-2 text-[11px]">
-                          <div>
-                            <span className="text-slate-400">Name Column:</span>{" "}
-                            <strong className="text-slate-800">{inspectResult.detected_mapping?.name_column}</strong>
-                          </div>
-                          <div>
-                            <span className="text-slate-400">Roll Column:</span>{" "}
-                            <strong className="text-slate-800">{inspectResult.detected_mapping?.roll_column}</strong>
-                          </div>
-                          <div>
-                            <span className="text-slate-400">Email Column:</span>{" "}
-                            <strong className="text-slate-800">{inspectResult.detected_mapping?.email_column}</strong>
-                          </div>
-                          <div>
-                            <span className="text-slate-400">Branch Column:</span>{" "}
-                            <strong className="text-slate-800">{inspectResult.detected_mapping?.branch_column}</strong>
-                          </div>
-                        </div>
-                      )}
-
-                      {inspectResult.sample_students && inspectResult.sample_students.length > 0 && (
-                        <div className="pt-1 border-t border-slate-200">
-                          <span className="text-[10px] uppercase font-bold text-slate-400">Sample Registered Students:</span>
-                          <div className="space-y-1 mt-1">
-                            {inspectResult.sample_students.map((st: any, i: number) => (
-                              <div key={i} className="text-[11px] text-slate-600 bg-white p-1.5 rounded border border-slate-200">
-                                <strong>{st.name}</strong> • Roll: <code>{st.roll}</code> • {st.branch}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
                       )}
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                    Min Team Size
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-700">
+                    Min squad size
                   </label>
                   <input
                     type="number"
@@ -1209,13 +1135,13 @@ export default function AdminPage() {
                         min_team_size: parseInt(e.target.value, 10) || 1,
                       })
                     }
-                    className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-sm font-medium"
+                    className="w-full px-3 py-2 rounded-md border border-stone-300 text-xs sm:text-sm font-mono tabular-nums"
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                    Max Team Size
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-700">
+                    Max squad size
                   </label>
                   <input
                     type="number"
@@ -1227,14 +1153,14 @@ export default function AdminPage() {
                         max_team_size: parseInt(e.target.value, 10) || 1,
                       })
                     }
-                    className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-sm font-medium"
+                    className="w-full px-3 py-2 rounded-md border border-stone-300 text-xs sm:text-sm font-mono tabular-nums"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                  Registration Deadline (Date & Time)
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-700">
+                  Registration deadline
                 </label>
                 <input
                   type="datetime-local"
@@ -1242,7 +1168,7 @@ export default function AdminPage() {
                   onChange={(e) =>
                     setEventFormData({ ...eventFormData, deadline: e.target.value })
                   }
-                  className="w-full px-4 py-2.5 rounded-2xl border border-slate-300 text-sm font-medium"
+                  className="w-full px-3 py-2 rounded-md border border-stone-300 text-xs sm:text-sm text-stone-900"
                   required
                 />
               </div>
@@ -1255,44 +1181,44 @@ export default function AdminPage() {
                   onChange={(e) =>
                     setEventFormData({ ...eventFormData, is_open: e.target.checked })
                   }
-                  className="w-4 h-4 rounded text-festive-maroon-700 focus:ring-festive-maroon-700"
+                  className="w-4 h-4 rounded text-[#831830] focus:ring-[#831830]"
                 />
-                <label htmlFor="is_open_check" className="text-sm font-medium text-slate-700">
-                  Allow Public Registrations (is_open)
+                <label htmlFor="is_open_check" className="text-xs font-medium text-stone-700">
+                  Allow public registrations (is_open)
                 </label>
               </div>
 
               {eventModalMsg && (
                 <div
-                  className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  className={`p-2.5 rounded-md text-xs flex items-center gap-2 ${
                     eventModalMsg.type === "success"
                       ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
                       : "bg-rose-50 text-rose-800 border border-rose-200"
                   }`}
                 >
                   {eventModalMsg.type === "success" ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                   ) : (
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                   )}
                   <span>{eventModalMsg.text}</span>
                 </div>
               )}
 
-              <div className="flex items-center gap-3 pt-3">
+              <div className="flex items-center gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={() => setEventModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs sm:text-sm"
+                  className="flex-1 py-2 rounded-md font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 text-xs sm:text-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingEvent}
-                  className="flex-1 py-2.5 rounded-xl font-bold text-white bg-festive-maroon-700 hover:bg-festive-maroon-800 text-xs sm:text-sm disabled:opacity-50"
+                  className="flex-1 py-2 rounded-md font-medium text-white bg-[#831830] hover:bg-[#6e192c] text-xs sm:text-sm disabled:opacity-50 shadow-sm"
                 >
-                  {savingEvent ? "Saving to Sheet..." : "Save Event"}
+                  {savingEvent ? "Saving..." : "Save Event"}
                 </button>
               </div>
             </form>
@@ -1302,57 +1228,59 @@ export default function AdminPage() {
 
       {/* TEAM DETAILS MODAL */}
       {viewingTeam && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-2xl border border-slate-200 space-y-5 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-md p-5 sm:p-6 shadow-xl border border-stone-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div>
-                <span className="text-xs font-bold uppercase text-festive-maroon-700">
+                <p className="text-xs font-mono uppercase text-stone-500">
                   {viewingTeam.event_name || viewingTeam.event_id}
-                </span>
-                <h3 className="text-xl font-extrabold text-slate-900">{viewingTeam.team_name}</h3>
+                </p>
+                <h3 className="text-base font-semibold text-stone-900">{viewingTeam.team_name}</h3>
               </div>
               <button
                 onClick={() => setViewingTeam(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600"
+                className="p-1 rounded-md text-stone-400 hover:text-stone-700"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-3">
-              <div className="bg-slate-50 p-3 rounded-xl text-xs space-y-1">
+              <div className="bg-stone-50 p-3 rounded-md text-xs space-y-1 border border-stone-200">
                 <div>
-                  Captain Email: <strong>{viewingTeam.captain_email}</strong>
+                  Captain email: <strong className="font-mono">{viewingTeam.captain_email}</strong>
                 </div>
                 <div>
                   Team ID: <span className="font-mono">{viewingTeam.team_id}</span>
                 </div>
                 <div>
-                  Registration Status:{" "}
-                  <span className="font-bold text-emerald-700">{viewingTeam.status}</span>
+                  Registration status:{" "}
+                  <span className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                    {viewingTeam.status}
+                  </span>
                 </div>
               </div>
 
               <div>
-                <h4 className="text-xs font-bold uppercase text-slate-500 mb-2">
-                  Registered Members ({viewingTeam.members.length})
+                <h4 className="text-xs font-medium text-stone-600 mb-2">
+                  Registered members ({viewingTeam.members.length})
                 </h4>
-                <div className="space-y-2 max-h-56 overflow-y-auto">
+                <div className="space-y-1.5 max-h-52 overflow-y-auto">
                   {viewingTeam.members.map((m) => (
                     <div
                       key={m.roll}
-                      className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between text-xs"
+                      className="p-2.5 rounded-md border border-stone-200 bg-white flex items-center justify-between text-xs"
                     >
                       <div>
-                        <div className="font-bold text-slate-900">
-                          {m.name}{" "}
+                        <div className="font-medium text-stone-900">
+                          {m.name}
                           {m.is_captain && (
-                            <span className="text-[10px] font-bold bg-festive-maroon-700 text-white px-1.5 py-0.2 rounded ml-1">
+                            <span className="text-[10px] font-mono bg-amber-100 text-amber-900 px-1 py-0.2 rounded ml-1 border border-amber-200">
                               Captain
                             </span>
                           )}
                         </div>
-                        <div className="text-slate-500 text-[11px]">
+                        <div className="text-stone-500 text-[11px] font-mono">
                           Roll: {m.roll} • {m.branch}
                         </div>
                       </div>
@@ -1362,24 +1290,24 @@ export default function AdminPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => handleDeleteTeam(viewingTeam.team_id, viewingTeam.team_name)}
                 disabled={deletingTeamId === viewingTeam.team_id}
-                className="flex-1 py-2.5 rounded-xl font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs sm:text-sm flex items-center justify-center gap-1.5 transition disabled:opacity-50"
+                className="flex-1 py-2 rounded-md font-medium text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs sm:text-sm flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
               >
                 {deletingTeamId === viewingTeam.team_id ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5" />
                 )}
-                Delete Team
+                Delete team
               </button>
               <button
                 type="button"
                 onClick={() => setViewingTeam(null)}
-                className="flex-1 py-2.5 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs sm:text-sm transition"
+                className="flex-1 py-2 rounded-md font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 text-xs sm:text-sm transition-colors"
               >
                 Close
               </button>

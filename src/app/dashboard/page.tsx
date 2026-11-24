@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Users,
-  Trophy,
-  Calendar,
   Clock,
   Lock,
   Unlock,
@@ -17,12 +15,9 @@ import {
   AlertCircle,
   CheckCircle2,
   Bell,
-  Sparkles,
   LogOut,
   Loader2,
   X,
-  FileText,
-  ShieldAlert,
 } from "lucide-react";
 import { callApi } from "@/lib/api";
 import { Team, TeamMember, Student, Notice } from "@/types";
@@ -78,33 +73,23 @@ export default function CaptainDashboardPage() {
     setLoading(true);
     try {
       const res = await callApi<{
-        captain_email: string;
         teams: Team[];
+        notices: Notice[];
+        captain_name: string;
       }>({
-        action: "getMyTeams",
+        action: "getCaptainDashboard",
         token: currentToken,
       });
 
       if (res.ok && res.data) {
         setTeams(res.data.teams || []);
-
-        // Load Notices for captain's events
-        const eventIds = Array.from(new Set(res.data.teams.map((t) => t.event_id)));
-        const noticesRes = await callApi<Notice[]>({
-          action: "getNotices",
-        });
-
-        if (noticesRes.ok && noticesRes.data) {
-          // Filter notices for "ALL" or events captain is registered in
-          const filtered = noticesRes.data.filter(
-            (n) => n.event_id === "ALL" || eventIds.includes(n.event_id)
-          );
-          setNotices(filtered);
+        setNotices(res.data.notices || []);
+        if (res.data.captain_name) {
+          setCaptainName(res.data.captain_name);
         }
       } else {
-        // If session expired or unauthorized
-        sessionStorage.removeItem("captain_token");
-        router.push("/login");
+        setTeams([]);
+        setNotices([]);
       }
     } catch (e) {
       console.error(e);
@@ -113,7 +98,7 @@ export default function CaptainDashboardPage() {
     }
   };
 
-  // Open Edit Modal
+  // Open Edit Modal for a team
   const openEditModal = (team: Team) => {
     setEditingTeam(team);
     setEditTeamName(team.team_name);
@@ -124,7 +109,6 @@ export default function CaptainDashboardPage() {
     setMemberSearchResults([]);
   };
 
-  // Close Edit Modal
   const closeEditModal = () => {
     setEditingTeam(null);
     setEditError("");
@@ -174,7 +158,7 @@ export default function CaptainDashboardPage() {
 
     const maxSize = Number(editingTeam.max_team_size) || 10;
     if (editMembers.length >= maxSize) {
-      setEditError(`Cannot exceed maximum team size of ${maxSize} members.`);
+      setEditError(`Cannot exceed maximum squad size of ${maxSize} members.`);
       return;
     }
 
@@ -193,10 +177,9 @@ export default function CaptainDashboardPage() {
   };
 
   const handleRemoveMemberFromEdit = (roll: string) => {
-    // Cannot remove captain
-    const target = editMembers.find((m) => m.roll === roll);
-    if (target?.is_captain) {
-      setEditError("The team captain cannot be removed.");
+    const member = editMembers.find((m) => m.roll === roll);
+    if (member?.is_captain) {
+      setEditError("The team captain cannot be removed from the squad.");
       return;
     }
 
@@ -242,8 +225,7 @@ export default function CaptainDashboardPage() {
       });
 
       if (res.ok) {
-        setEditSuccess("Team updated successfully!");
-        // Refresh local teams list
+        setEditSuccess("Team roster updated successfully.");
         setTeams((prev) =>
           prev.map((t) =>
             t.team_id === editingTeam.team_id
@@ -274,177 +256,171 @@ export default function CaptainDashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-festive-maroon-700" />
-        <p className="text-slate-500 text-sm">Loading captain portal & teams...</p>
+      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-3 text-stone-500">
+        <Loader2 className="w-6 h-6 animate-spin text-[#831830]" />
+        <p className="text-xs">Loading captain squads...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       {/* Dashboard Top Header */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-sm border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-white rounded-lg p-5 sm:p-6 shadow-sm border border-stone-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider bg-festive-maroon-100 text-festive-maroon-800 px-2.5 py-0.5 rounded-full">
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
               Captain Portal
             </span>
-            <span className="text-xs text-slate-400 font-mono">
+            <span className="text-xs text-stone-500 font-mono">
               {captainEmail}
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">
-            Welcome, {captainName || "Team Captain"} 👋
+          <h1 className="text-xl sm:text-2xl font-serif text-stone-900 mt-1 font-normal">
+            Squad Rosters & Schedules
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Manage your registered cultural squads, review team members, and check event schedules.
+          <p className="text-xs text-stone-600">
+            {captainName ? `Captain: ${captainName}` : "Manage registered cultural teams and review stage calls."}
           </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
           <Link
             href="/register"
-            className="flex-1 md:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-white bg-gradient-to-r from-festive-maroon-700 to-festive-saffron-600 shadow-sm hover:opacity-95"
+            className="flex-1 md:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-md font-medium text-xs sm:text-sm text-white bg-[#831830] hover:bg-[#6e192c] transition-colors shadow-sm"
           >
-            <Plus className="w-4 h-4 text-festive-gold-300" /> Register Another Team
+            <Plus className="w-3.5 h-3.5 text-amber-200" /> Register Another Team
           </Link>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs sm:text-sm font-medium text-stone-700 hover:text-rose-700 hover:bg-rose-50 border border-stone-200 transition-colors"
           >
-            <LogOut className="w-4 h-4" /> Logout
+            <LogOut className="w-3.5 h-3.5" /> Logout
           </button>
         </div>
       </div>
 
-      {/* Tabs Switcher */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-stone-200 pb-2">
         <button
           onClick={() => setActiveTab("teams")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition ${
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
             activeTab === "teams"
-              ? "bg-festive-maroon-700 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-100"
+              ? "bg-stone-900 text-white"
+              : "text-stone-600 hover:bg-stone-100"
           }`}
         >
-          <Users className="w-4 h-4" />
+          <Users className="w-3.5 h-3.5" />
           My Teams ({teams.length})
         </button>
 
         <button
           onClick={() => setActiveTab("notices")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition ${
+          className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
             activeTab === "notices"
-              ? "bg-festive-maroon-700 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-100"
+              ? "bg-stone-900 text-white"
+              : "text-stone-600 hover:bg-stone-100"
           }`}
         >
-          <Bell className="w-4 h-4" />
+          <Bell className="w-3.5 h-3.5" />
           Notices & Schedules ({notices.length})
         </button>
       </div>
 
       {/* TAB 1: MY TEAMS */}
       {activeTab === "teams" && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {teams.length === 0 ? (
-            <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
-                <Users className="w-8 h-8" />
-              </div>
+            <div className="bg-white rounded-lg p-10 text-center border border-stone-200 space-y-3">
+              <Users className="w-6 h-6 text-stone-400 mx-auto" />
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-slate-800">No teams registered yet</h3>
-                <p className="text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
-                  You haven't registered any team under this captain email. Click below to start.
+                <h3 className="text-base font-semibold text-stone-900">No teams registered yet</h3>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                  You have not registered any cultural squad under this captain email yet.
                 </p>
               </div>
               <Link
                 href="/register"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-festive-maroon-700 hover:bg-festive-maroon-800"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md font-medium text-xs text-white bg-[#831830] hover:bg-[#6e192c]"
               >
-                Register Your First Team
+                Register a Team
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6">
+            <div className="grid grid-cols-1 gap-4">
               {teams.map((team) => {
                 const isDeadlinePassed = Boolean(team.is_locked);
 
                 return (
                   <div
                     key={team.team_id}
-                    className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden"
+                    className="bg-white rounded-lg border border-stone-200 shadow-sm overflow-hidden"
                   >
                     {/* Team Header */}
-                    <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="bg-[#1c1917] text-stone-100 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-festive-gold-400/20 text-festive-gold-300 border border-festive-gold-400/30">
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-stone-800 text-amber-300 border border-stone-700">
                             {team.event_name || team.event_id}
                           </span>
-                          <span className="text-xs font-mono text-slate-400">
+                          <span className="text-xs font-mono text-stone-400">
                             ID: {team.team_id}
                           </span>
                         </div>
-                        <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
+                        <h2 className="text-lg font-semibold text-white tracking-tight">
                           {team.team_name}
                         </h2>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5">
                         {isDeadlinePassed ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                            <Lock className="w-3.5 h-3.5 text-rose-400" />
-                            Locked (Deadline Passed)
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono bg-rose-950/60 text-rose-300 border border-rose-800">
+                            <Lock className="w-3.5 h-3.5" /> Locked
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                            <Unlock className="w-3.5 h-3.5 text-emerald-400" />
-                            Active & Editable
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-mono bg-emerald-950/60 text-emerald-300 border border-emerald-800">
+                            <Unlock className="w-3.5 h-3.5" /> Editable
                           </span>
                         )}
 
                         {!isDeadlinePassed ? (
                           <button
                             onClick={() => openEditModal(team)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-white text-slate-900 hover:bg-festive-gold-100 transition shadow"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-stone-100 text-stone-900 hover:bg-white transition-colors"
                           >
-                            <Edit3 className="w-3.5 h-3.5 text-festive-maroon-700" />
+                            <Edit3 className="w-3.5 h-3.5 text-[#831830]" />
                             Edit Team
                           </button>
                         ) : (
                           <button
                             disabled
-                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-slate-700 text-slate-400 cursor-not-allowed opacity-60"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-stone-800 text-stone-500 cursor-not-allowed opacity-60"
                             title="Editing is locked because deadline has passed"
                           >
-                            <Lock className="w-3.5 h-3.5" />
-                            Locked
+                            <Lock className="w-3.5 h-3.5" /> Locked
                           </button>
                         )}
                       </div>
                     </div>
 
                     {/* Team Meta & Members */}
-                    <div className="p-5 sm:p-6 space-y-4">
-                      <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2 border-b border-slate-100 pb-3">
+                    <div className="p-4 sm:p-5 space-y-4">
+                      <div className="flex flex-wrap items-center justify-between text-xs text-stone-500 gap-2 border-b border-stone-100 pb-3">
                         <div>
                           Status:{" "}
-                          <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          <span className="font-mono text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                             {team.status}
                           </span>
                         </div>
                         {team.deadline && (
                           <div className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <Clock className="w-3.5 h-3.5 text-stone-400" />
                             <span>
                               Deadline:{" "}
-                              <strong className="text-slate-700">
+                              <strong className="font-medium text-stone-800 tabular-nums">
                                 {new Date(team.deadline).toLocaleDateString("en-IN", {
                                   day: "numeric",
                                   month: "short",
-                                  year: "numeric",
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })}
@@ -456,34 +432,34 @@ export default function CaptainDashboardPage() {
 
                       {/* Members Roster */}
                       <div className="space-y-2">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                          Squad Members ({team.members.length} Total)
+                        <h4 className="text-xs font-medium text-stone-600">
+                          Squad Members ({team.members.length} total)
                         </h4>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                          {team.members.map((member, idx) => (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                          {team.members.map((member) => (
                             <div
                               key={member.roll}
-                              className={`p-3 rounded-2xl border text-xs space-y-1 ${
+                              className={`p-3 rounded-md border text-xs space-y-1 ${
                                 member.is_captain
-                                  ? "bg-festive-gold-50/70 border-festive-gold-300 ring-1 ring-festive-gold-200"
-                                  : "bg-slate-50/80 border-slate-200"
+                                  ? "bg-amber-50/40 border-amber-200"
+                                  : "bg-stone-50 border-stone-200"
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-slate-900 text-sm">
+                                <span className="font-medium text-stone-900">
                                   {member.name}
                                 </span>
                                 {member.is_captain && (
-                                  <span className="text-[10px] font-bold bg-festive-maroon-700 text-white px-2 py-0.2 rounded-md">
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-200/80 text-amber-900 border border-amber-300">
                                     Captain
                                   </span>
                                 )}
                               </div>
-                              <p className="text-slate-600 font-mono text-[11px]">
+                              <p className="text-stone-500 font-mono text-[11px]">
                                 Roll: {member.roll}
                               </p>
-                              <p className="text-slate-500 text-[11px]">
+                              <p className="text-stone-500 text-[11px]">
                                 Branch: {member.branch}
                               </p>
                             </div>
@@ -501,35 +477,35 @@ export default function CaptainDashboardPage() {
 
       {/* TAB 2: NOTICES, SCHEDULE & RESULTS */}
       {activeTab === "notices" && (
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {notices.length === 0 ? (
-            <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 text-slate-500 text-sm">
+            <div className="bg-white rounded-lg p-10 text-center border border-stone-200 text-stone-500 text-xs">
               No notices published yet for your events.
             </div>
           ) : (
             notices.map((notice) => (
               <div
                 key={notice.notice_id}
-                className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-3"
+                className="bg-white rounded-lg p-5 border border-stone-200 shadow-sm space-y-2.5"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                      className={`text-[11px] font-mono px-2 py-0.5 rounded ${
                         notice.type === "schedule"
-                          ? "bg-sky-100 text-sky-800 border border-sky-200"
+                          ? "bg-sky-50 text-sky-800 border border-sky-200"
                           : notice.type === "result"
-                          ? "bg-amber-100 text-amber-800 border border-amber-200"
-                          : "bg-festive-maroon-100 text-festive-maroon-800 border border-festive-maroon-200"
+                          ? "bg-amber-50 text-amber-800 border border-amber-200"
+                          : "bg-stone-100 text-stone-800 border border-stone-200"
                       }`}
                     >
-                      {notice.type}
+                      {notice.type.toUpperCase()}
                     </span>
-                    <span className="text-xs text-slate-500 font-medium">
+                    <span className="text-xs text-stone-500 font-medium">
                       Event: <strong>{notice.event_id}</strong>
                     </span>
                   </div>
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-stone-500 font-mono tabular-nums">
                     {new Date(notice.created_at).toLocaleDateString("en-IN", {
                       day: "numeric",
                       month: "short",
@@ -540,10 +516,10 @@ export default function CaptainDashboardPage() {
                   </span>
                 </div>
 
-                <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                <h3 className="text-base font-semibold text-stone-900">
                   {notice.title}
                 </h3>
-                <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">
+                <p className="text-sm text-stone-700 whitespace-pre-line leading-relaxed">
                   {notice.body}
                 </p>
               </div>
@@ -554,87 +530,88 @@ export default function CaptainDashboardPage() {
 
       {/* EDIT TEAM MODAL */}
       {editingTeam && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl w-full max-w-xl p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6 animate-in zoom-in-95">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg w-full max-w-lg p-5 sm:p-6 shadow-xl border border-stone-200 space-y-5">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div>
-                <span className="text-xs font-bold uppercase text-festive-maroon-700">
-                  Edit Squad Before Deadline
-                </span>
-                <h3 className="text-xl font-extrabold text-slate-900">
+                <p className="text-xs font-mono uppercase text-stone-500">
+                  Roster Adjustment
+                </p>
+                <h3 className="text-lg font-semibold text-stone-900">
                   {editingTeam.event_name || editingTeam.event_id}
                 </h3>
               </div>
               <button
                 onClick={closeEditModal}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="p-1.5 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveTeamEdit} className="space-y-5">
+            <form onSubmit={handleSaveTeamEdit} className="space-y-4">
               {/* Team Name */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                  Team Name
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-700">
+                  Team name
                 </label>
                 <input
                   type="text"
                   value={editTeamName}
                   onChange={(e) => setEditTeamName(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-semibold"
+                  className="w-full px-3 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900"
                   required
                 />
               </div>
 
               {/* Add Teammate Search */}
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                    Add Registered Classmate (This Event Only)
+                  <label className="text-xs font-medium text-stone-700">
+                    Add verified classmate
                   </label>
-                  <span className="text-xs font-semibold text-slate-500">
-                    Size: {editMembers.length} / {editingTeam.min_team_size || 1}-
-                    {editingTeam.max_team_size || 10}
+                  <span className="text-xs font-mono text-stone-500">
+                    {editMembers.length} / {editingTeam.min_team_size || 1}–{editingTeam.max_team_size || 10} members
                   </span>
                 </div>
 
                 <div className="relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="Search by Roll No or Name..."
+                    placeholder="Search by roll number or name..."
                     value={memberSearchQuery}
                     onChange={(e) => setMemberSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-10 py-2.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-xs sm:text-sm font-medium"
+                    className="w-full pl-8 pr-8 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-xs sm:text-sm text-stone-900"
                   />
                   {memberSearching && (
-                    <Loader2 className="w-4 h-4 animate-spin text-festive-maroon-700 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500 absolute right-3 top-1/2 -translate-y-1/2" />
                   )}
                 </div>
 
                 {/* Suggestions List */}
                 {memberSearchQuery.trim().length >= 2 && (
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl max-h-40 overflow-y-auto divide-y divide-slate-100">
+                  <div className="bg-stone-50 border border-stone-200 rounded-md max-h-36 overflow-y-auto divide-y divide-stone-100">
                     {memberSearchResults.length === 0 ? (
-                      <p className="p-3 text-xs text-slate-400 text-center">
+                      <p className="p-2.5 text-xs text-stone-500 text-center">
                         {memberSearching ? "Searching..." : "No matching registered student found."}
                       </p>
                     ) : (
                       memberSearchResults.map((st) => (
                         <div
                           key={st.roll}
-                          className="p-2.5 flex items-center justify-between hover:bg-white transition"
+                          className="p-2 flex items-center justify-between hover:bg-white"
                         >
                           <div className="text-xs">
-                            <span className="font-bold text-slate-900">{st.name}</span> (Roll:{" "}
-                            {st.roll} | {st.branch})
+                            <span className="font-medium text-stone-900">{st.name}</span>{" "}
+                            <span className="font-mono text-stone-500 text-[11px]">
+                              ({st.roll} • {st.branch})
+                            </span>
                           </div>
                           <button
                             type="button"
                             onClick={() => handleAddMemberToEdit(st)}
-                            className="text-xs font-bold px-2 py-1 rounded bg-festive-maroon-700 text-white hover:bg-festive-maroon-800"
+                            className="text-xs font-medium px-2 py-0.5 rounded bg-stone-900 text-white hover:bg-stone-800"
                           >
                             + Add
                           </button>
@@ -646,24 +623,24 @@ export default function CaptainDashboardPage() {
               </div>
 
               {/* Members List */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                  Current Squad Members
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-stone-700">
+                  Current squad members
                 </label>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
                   {editMembers.map((m) => (
                     <div
                       key={m.roll}
-                      className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs"
+                      className="p-2 rounded-md border border-stone-200 bg-stone-50 flex items-center justify-between text-xs"
                     >
                       <div>
-                        <span className="font-bold text-slate-900">{m.name}</span>
+                        <span className="font-medium text-stone-900">{m.name}</span>
                         {m.is_captain && (
-                          <span className="ml-1.5 text-[9px] font-bold bg-festive-maroon-700 text-white px-1.5 py-0.2 rounded">
+                          <span className="ml-1.5 text-[9px] font-mono px-1 py-0.1 rounded bg-amber-200 text-amber-900">
                             Captain
                           </span>
                         )}
-                        <span className="text-slate-500 ml-1">
+                        <span className="text-stone-500 ml-1 font-mono text-[11px]">
                           • {m.roll} • {m.branch}
                         </span>
                       </div>
@@ -672,10 +649,10 @@ export default function CaptainDashboardPage() {
                         <button
                           type="button"
                           onClick={() => handleRemoveMemberFromEdit(m.roll)}
-                          className="text-slate-400 hover:text-rose-600 p-1"
+                          className="text-stone-400 hover:text-rose-600 p-1"
                           title="Remove teammate"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
@@ -685,38 +662,38 @@ export default function CaptainDashboardPage() {
 
               {/* Feedback messages */}
               {editError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <div className="p-2.5 rounded-md bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
                   <span>{editError}</span>
                 </div>
               )}
               {editSuccess && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                <div className="p-2.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
                   <span>{editSuccess}</span>
                 </div>
               )}
 
               {/* Actions */}
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex items-center gap-2.5 pt-2">
                 <button
                   type="button"
                   onClick={closeEditModal}
-                  className="flex-1 py-3 rounded-2xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs sm:text-sm"
+                  className="flex-1 py-2 rounded-md font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 text-xs sm:text-sm transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={savingEdit}
-                  className="flex-1 py-3 rounded-2xl font-bold text-white bg-festive-maroon-700 hover:bg-festive-maroon-800 text-xs sm:text-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  className="flex-1 py-2 rounded-md font-medium text-white bg-[#831830] hover:bg-[#6e192c] text-xs sm:text-sm flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors shadow-sm"
                 >
                   {savingEdit ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" /> Saving...
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
                     </>
                   ) : (
-                    "Save Team Changes"
+                    "Save roster changes"
                   )}
                 </button>
               </div>
