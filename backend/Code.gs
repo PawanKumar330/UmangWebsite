@@ -271,7 +271,8 @@ function handleGetEvents() {
 function getRegisteredParticipantsInEvent(ss, eventId) {
   const teamsSheet = getSheetOrInit(ss, CONFIG.TABS.TEAMS);
   const data = teamsSheet.getDataRange().getValues();
-  const registeredCaptains = {}; // emailNorm -> teamName, rollNorm -> teamName
+  const captainsByEmail = {}; // emailNorm -> teamName
+  const captainsByRoll = {};  // rollNorm -> teamName
   const registeredMembers = {}; // rollNorm -> { name, teamName, isCaptain }, emailNorm -> ...
 
   for (let i = 1; i < data.length; i++) {
@@ -281,7 +282,7 @@ function getRegisteredParticipantsInEvent(ss, eventId) {
     const rowTeamName = String(data[i][2] || "").trim();
     const rowCaptainEmail = normalizeString(data[i][3]);
     if (rowCaptainEmail) {
-      registeredCaptains[rowCaptainEmail] = rowTeamName;
+      captainsByEmail[rowCaptainEmail] = rowTeamName;
     }
 
     let members = [];
@@ -300,16 +301,19 @@ function getRegisteredParticipantsInEvent(ss, eventId) {
       if (mRoll) {
         registeredMembers[mRoll] = { name: mName, teamName: rowTeamName, isCaptain: isCaptain };
         if (isCaptain) {
-          registeredCaptains[mRoll] = rowTeamName;
+          captainsByRoll[mRoll] = rowTeamName;
         }
       }
       if (mEmail) {
         registeredMembers[mEmail] = { name: mName, teamName: rowTeamName, isCaptain: isCaptain };
+        if (isCaptain) {
+          captainsByEmail[mEmail] = rowTeamName;
+        }
       }
     }
   }
 
-  return { registeredCaptains: registeredCaptains, registeredMembers: registeredMembers };
+  return { captainsByEmail: captainsByEmail, captainsByRoll: captainsByRoll, registeredMembers: registeredMembers };
 }
 
 /**
@@ -407,9 +411,9 @@ function handleVerifyCaptain(payload) {
   const ss = getPortalDb();
   const reg = getRegisteredParticipantsInEvent(ss, eventId);
 
-  // 1. Captain duplicate check
-  if ((emailNorm && reg.registeredCaptains[emailNorm]) || (rollNorm && reg.registeredCaptains[rollNorm])) {
-    const existingTeam = (emailNorm && reg.registeredCaptains[emailNorm]) || reg.registeredCaptains[rollNorm];
+  // 1. Captain duplicate check by Roll
+  if (rollNorm && reg.captainsByRoll[rollNorm]) {
+    const existingTeam = reg.captainsByRoll[rollNorm];
     return {
       ok: false,
       error: `You (${match.name}, Roll: ${match.roll}) have already registered team '${existingTeam}' as captain for this event. A captain can lead only one team per event.`,
@@ -418,9 +422,9 @@ function handleVerifyCaptain(payload) {
     };
   }
 
-  // 2. Member duplicate check
-  if ((rollNorm && reg.registeredMembers[rollNorm]) || (emailNorm && reg.registeredMembers[emailNorm])) {
-    const existing = (rollNorm && reg.registeredMembers[rollNorm]) || reg.registeredMembers[emailNorm];
+  // 2. Member duplicate check by Roll
+  if (rollNorm && reg.registeredMembers[rollNorm]) {
+    const existing = reg.registeredMembers[rollNorm];
     return {
       ok: false,
       error: `You (${match.name}, Roll: ${match.roll}) are already participating in team '${existing.teamName}' for this event. A student can participate in only one team per event.`,
@@ -492,7 +496,8 @@ function handleRegisterTeam(payload) {
     const teamNameNorm = normalizeString(teamName);
 
     // Track existing captains and student participants in this event
-    const existingCaptainsInEvent = new Set();
+    const captainsByEmail = {}; // emailNorm -> teamName
+    const captainsByRoll = {};  // rollNorm -> teamName
     const registeredMembersInEvent = {}; // rollNorm -> { name, teamName }
 
     for (let i = 1; i < teamsData.length; i++) {
@@ -508,7 +513,7 @@ function handleRegisterTeam(payload) {
       }
 
       if (rowCaptain) {
-        existingCaptainsInEvent.add(rowCaptain);
+        captainsByEmail[rowCaptain] = rowTeamName;
       }
 
       let rowMembers = [];
@@ -521,13 +526,15 @@ function handleRegisterTeam(payload) {
       for (let j = 0; j < rowMembers.length; j++) {
         const mRoll = normalizeString(rowMembers[j].roll);
         const mEmail = normalizeString(rowMembers[j].email);
+        const isCaptain = !!rowMembers[j].is_captain;
+
         if (mRoll) {
           registeredMembersInEvent[mRoll] = {
             name: rowMembers[j].name || "Student",
             teamName: rowTeamName
           };
-          if (rowMembers[j].is_captain) {
-            existingCaptainsInEvent.add(mRoll);
+          if (isCaptain) {
+            captainsByRoll[mRoll] = rowTeamName;
           }
         }
         if (mEmail) {
@@ -535,8 +542,8 @@ function handleRegisterTeam(payload) {
             name: rowMembers[j].name || "Student",
             teamName: rowTeamName
           };
-          if (rowMembers[j].is_captain) {
-            existingCaptainsInEvent.add(mEmail);
+          if (isCaptain) {
+            captainsByEmail[mEmail] = rowTeamName;
           }
         }
       }
@@ -588,17 +595,27 @@ function handleRegisterTeam(payload) {
     const captainBranch = captainRecord.branch;
     const captainRollNorm = normalizeString(captainRoll);
 
-    // Rule: In a particular event, a member can be captain of ONE team only
-    if (existingCaptainsInEvent.has(captainEmail) || (captainRollNorm && existingCaptainsInEvent.has(captainRollNorm))) {
+    // Rule 1: A student can lead only ONE team per event (checked by Roll Number)
+    if (captainRollNorm && captainsByRoll[captainRollNorm]) {
+      const existingTeam = captainsByRoll[captainRollNorm];
       return {
         ok: false,
-        error: `Registration failed: You (${captainName}, Roll: ${captainRoll}) have already registered a team as captain for this event. A captain can lead only one team per event.`
+        error: `Registration failed: Student (${captainName}, Roll: ${captainRoll}) has already registered team '${existingTeam}' as captain for this event. A student can lead only one team per event.`
       };
     }
 
-    // Rule: No member can participate in multiple teams within the same event
-    if (registeredMembersInEvent[captainRollNorm] || (captainEmail && registeredMembersInEvent[captainEmail])) {
-      const existing = registeredMembersInEvent[captainRollNorm] || registeredMembersInEvent[captainEmail];
+    // Rule 2: Each team must have a unique captain email address in this event
+    if (captainEmail && captainsByEmail[captainEmail]) {
+      const existingTeam = captainsByEmail[captainEmail];
+      return {
+        ok: false,
+        error: `Registration failed: The email address '${captainEmail}' is already registered as captain for team '${existingTeam}' in this event. Each captain must provide their own unique Gmail address. (If this is a test registration, delete team '${existingTeam}' in the Admin panel at /admin).`
+      };
+    }
+
+    // Rule 3: No student can participate in multiple teams within the same event (checked by Roll Number)
+    if (captainRollNorm && registeredMembersInEvent[captainRollNorm]) {
+      const existing = registeredMembersInEvent[captainRollNorm];
       return {
         ok: false,
         error: `Registration failed: You (${captainName}, Roll: ${captainRoll}) are already participating in team '${existing.teamName}' for this event. A student can participate in only one team per event.`
@@ -1594,6 +1611,26 @@ function handleSendCaptainEmailVerification(payload) {
       ok: false,
       error: "Please provide a valid Gmail / Email address (e.g. name@gmail.com)."
     };
+  }
+
+  // Early check: if event_id is passed, ensure this email is not already captain in this event
+  const eventId = String(payload.event_id || "").trim();
+  if (eventId) {
+    const ss = getPortalDb();
+    const teamsSheet = getSheetOrInit(ss, CONFIG.TABS.TEAMS);
+    const teamsData = teamsSheet.getDataRange().getValues();
+    for (let i = 1; i < teamsData.length; i++) {
+      if (String(teamsData[i][1] || "").trim() === eventId) {
+        const rowCaptainEmail = normalizeString(teamsData[i][3]);
+        if (rowCaptainEmail === email) {
+          const rowTeamName = String(teamsData[i][2] || "").trim();
+          return {
+            ok: false,
+            error: `The email address '${email}' is already registered as captain for team '${rowTeamName}' in this event. Each captain must use a unique Gmail address. (If this is a test, delete team '${rowTeamName}' in the Admin panel).`
+          };
+        }
+      }
+    }
   }
 
   // Rate limiting: max 5 verification emails per address per 5 minutes

@@ -246,6 +246,7 @@ export default function RegisterTeamPage() {
       const res = await callApi<{ message: string }>({
         action: "sendCaptainEmailVerification",
         email: trimmed,
+        event_id: selectedEventId,
         captain_name: captainVerified?.name || "Captain",
         event_name: selectedEvent?.event_name || "Cultural Fest",
       });
