@@ -10,6 +10,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        maroon: {
+          DEFAULT: '#9B1B3A',
+          hover: '#821630',
+          light: '#fbf0f2'
+        },
+        neutral: {
+          dark: '#111827',
+          muted: '#6B7280',
+          border: '#E5E7EB',
+          surface: '#F9FAFB'
+        },
         festive: {
           maroon: {
             50: "#fdf2f4",
