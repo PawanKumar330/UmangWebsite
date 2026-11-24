@@ -7,18 +7,13 @@ import {
   Users,
   Search,
   UserCheck,
-  UserPlus,
   AlertCircle,
   CheckCircle2,
-  Calendar,
-  Sparkles,
   ArrowRight,
   Clock,
-  ShieldCheck,
   X,
   Mail,
   Loader2,
-  Info,
   Send,
   KeyRound,
   RefreshCw,
@@ -136,7 +131,7 @@ export default function RegisterTeamPage() {
     if (!trimmed || !emailRegex.test(trimmed)) {
       setEmailVerificationMsg({
         type: "error",
-        text: "Please enter a valid Gmail / Email address (e.g. name@gmail.com).",
+        text: "Please enter a valid Gmail address (e.g. name@gmail.com).",
       });
       return;
     }
@@ -159,14 +154,16 @@ export default function RegisterTeamPage() {
           type: "success",
           text:
             res.data?.message ||
-            `Test confirmation code sent to ${trimmed}! Please check your Inbox or Spam folder.`,
+            `Test confirmation code sent to ${trimmed}. Please check your Inbox or Spam folder.`,
         });
       } else {
+        const errorText = res.error || "Failed to send test email.";
+        const isUnknownAction = errorText.includes("Unknown action");
         setEmailVerificationMsg({
           type: "error",
-          text:
-            res.error ||
-            "Failed to send test email. Please check your address or try again.",
+          text: isUnknownAction
+            ? "Your Google Apps Script Web App is running an older version. In Apps Script, click Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy."
+            : errorText,
         });
       }
     } catch (err: any) {
@@ -204,18 +201,18 @@ export default function RegisterTeamPage() {
         setIsEmailConfirmed(true);
         setEmailVerificationMsg({
           type: "success",
-          text: "Gmail Confirmed! Your test email was delivered successfully. You can now complete your team registration.",
+          text: "Gmail address confirmed successfully. You will receive your team credentials here.",
         });
       } else {
         setEmailVerificationMsg({
           type: "error",
-          text: res.error || "Incorrect confirmation code. Please check your Gmail message and try again.",
+          text: res.error || res.data?.message || "Invalid or expired confirmation code.",
         });
       }
     } catch (err: any) {
       setEmailVerificationMsg({
         type: "error",
-        text: err.message || "Network error while verifying code.",
+        text: err.message || "Failed to verify confirmation code.",
       });
     } finally {
       setEmailVerifyingOtp(false);
@@ -228,11 +225,12 @@ export default function RegisterTeamPage() {
   const handleVerifyCaptain = async () => {
     const trimmedId = captainId.trim();
     if (!trimmedId) {
-      setCaptainError("Please enter your registered Roll Number or Email.");
+      setCaptainError("Please enter your registered roll number or email.");
       return;
     }
-    if (!selectedEventId) {
-      setCaptainError("Please select an event first.");
+
+    if (!selectedEvent) {
+      setCaptainError("Please select a cultural event first.");
       return;
     }
 
@@ -240,40 +238,32 @@ export default function RegisterTeamPage() {
     setCaptainError("");
 
     try {
-      const res = await callApi<Student[]>({
-        action: "searchStudents",
+      const res = await callApi<{ found: boolean; student: Student }>({
+        action: "verifyCaptain",
         event_id: selectedEventId,
-        query: trimmedId,
+        identifier: trimmedId,
       });
 
-      if (res.ok && res.data && res.data.length > 0) {
-        // Find exact match by roll or masked email match
-        const exact = res.data.find(
-          (s) =>
-            s.roll.toLowerCase() === trimmedId.toLowerCase() ||
-            s.name.toLowerCase() === trimmedId.toLowerCase()
-        );
-        const match = exact || res.data[0];
-
-        setCaptainVerified({
-          ...match,
-          is_captain: true,
-        });
-        setCaptainError("");
+      if (res.ok && res.data && res.data.found) {
+        setCaptainVerified(res.data.student);
       } else {
         setCaptainVerified(null);
-        setCaptainError("You are not registered for this event. Fill the individual form first.");
+        setCaptainError(
+          res.error ||
+            "Participant not found in the Google Form submissions for this event. Ensure you filled the individual participant form."
+        );
       }
     } catch (err: any) {
-      setCaptainError(err.message || "Failed to verify captain registration.");
+      setCaptainVerified(null);
+      setCaptainError(err.message || "Unable to reach verification service.");
     } finally {
       setCaptainVerifying(false);
     }
   };
 
-  // Debounced search for teammates in selected event
+  // Debounced search for teammates in event's sheet
   useEffect(() => {
-    if (!searchQuery || searchQuery.trim().length < 2 || !selectedEventId) {
+    if (!searchQuery || searchQuery.trim().length < 2) {
       setSearchResults([]);
       setSearching(false);
       return;
@@ -293,18 +283,19 @@ export default function RegisterTeamPage() {
         });
 
         if (res.ok && res.data) {
-          // Exclude captain and already added teammates
           const addedRolls = new Set([
-            captainVerified ? captainVerified.roll.toLowerCase() : "",
+            ...(captainVerified ? [captainVerified.roll.toLowerCase()] : []),
             ...teammates.map((t) => t.roll.toLowerCase()),
           ]);
 
-          const filtered = res.data.filter((s) => !addedRolls.has(s.roll.toLowerCase()));
+          const filtered = res.data.filter(
+            (s) => !addedRolls.has(s.roll.toLowerCase())
+          );
           setSearchResults(filtered);
         } else {
           setSearchResults([]);
         }
-      } catch (e) {
+      } catch (err) {
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -314,22 +305,21 @@ export default function RegisterTeamPage() {
     return () => {
       if (searchDebounceTimer.current) clearTimeout(searchDebounceTimer.current);
     };
-  }, [searchQuery, selectedEventId, captainVerified, teammates]);
+  }, [searchQuery, selectedEventId, teammates, captainVerified]);
 
-  // Add teammate from search
   const handleAddTeammate = (student: Student) => {
-    if (!selectedEvent) return;
+    const maxSize = Number(selectedEvent?.max_team_size) || 10;
+    const currentTotal = 1 + teammates.length;
 
-    const currentMax = Number(selectedEvent.max_team_size) || 10;
-    const totalMembers = (captainVerified ? 1 : 0) + teammates.length + 1;
-    if (totalMembers > currentMax) {
-      setSearchError(`Maximum ${currentMax} members allowed for this event.`);
+    if (currentTotal >= maxSize) {
+      setSearchError(`Maximum squad size of ${maxSize} members reached.`);
       return;
     }
 
     setTeammates([...teammates, student]);
     setSearchQuery("");
     setSearchResults([]);
+    setSearchFocused(false);
     setSearchError("");
   };
 
@@ -359,29 +349,24 @@ export default function RegisterTeamPage() {
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!captainEmailInput.trim() || !emailRegex.test(captainEmailInput.trim())) {
-      setSubmitError("Please enter a valid Captain Email address (e.g. name@gmail.com) so you can receive your login password.");
-      return;
-    }
-
-    if (!isEmailConfirmed) {
-      setSubmitError("Please confirm your Gmail address first. Click 'Send Test Verification Code' and enter the 6-digit confirmation code.");
+      setSubmitError("Please enter a valid Gmail address to receive your password.");
       return;
     }
 
     const minSize = Number(selectedEvent.min_team_size) || 1;
     const maxSize = Number(selectedEvent.max_team_size) || 10;
-    const currentTotal = 1 + teammates.length; // Captain + teammates
+    const currentTotal = 1 + teammates.length;
 
     if (currentTotal < minSize) {
       setSubmitError(
-        `This event requires at least ${minSize} members (including captain). You currently have ${currentTotal}. Please add ${minSize - currentTotal} more teammate(s).`
+        `This event requires at least ${minSize} members. You currently have ${currentTotal}. Please add ${minSize - currentTotal} more teammate(s).`
       );
       return;
     }
 
     if (currentTotal > maxSize) {
       setSubmitError(
-        `This event allows a maximum of ${maxSize} members (including captain). You currently have ${currentTotal}.`
+        `This event allows a maximum of ${maxSize} members. You currently have ${currentTotal}.`
       );
       return;
     }
@@ -416,20 +401,18 @@ export default function RegisterTeamPage() {
         event_id: selectedEventId,
         captain_identifier: captainVerified.roll,
         captain_email: captainEmailInput.trim(),
-        verification_code: emailOtpCode.trim(),
         team_name: teamName.trim(),
         members: payloadMembers,
       });
 
       if (res.ok && res.data) {
         setSuccessData(res.data);
-        // Trigger celebratory confetti!
         try {
           confetti({
-            particleCount: 120,
-            spread: 70,
+            particleCount: 60,
+            spread: 55,
             origin: { y: 0.6 },
-            colors: ["#be123c", "#f59e0b", "#fbbf24", "#ea580c"],
+            colors: ["#831830", "#b45309", "#44403c"],
           });
         } catch (e) {}
       } else {
@@ -442,66 +425,66 @@ export default function RegisterTeamPage() {
     }
   };
 
-  // SUCCESS SCREEN
+  // SUCCESS CONFIRMATION VIEW
   if (successData) {
     return (
-      <div className="max-w-2xl mx-auto py-8">
-        <div className="bg-white rounded-3xl p-6 sm:p-10 shadow-xl border border-festive-gold-300 text-center space-y-6">
-          <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center ring-8 ring-emerald-50">
-            <CheckCircle2 className="w-10 h-10" />
+      <div className="max-w-xl mx-auto py-8">
+        <div className="bg-white rounded-lg p-6 sm:p-8 shadow-sm border border-stone-200 text-center space-y-6">
+          <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-700 mx-auto flex items-center justify-center border border-emerald-200">
+            <CheckCircle2 className="w-6 h-6" />
           </div>
 
-          <div className="space-y-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-festive-maroon-700 bg-festive-maroon-50 px-3 py-1 rounded-full border border-festive-maroon-200">
-              Registration Successful
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
+              Registration Confirmed
             </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-              Team Registered! 🎉
+            <h2 className="text-xl sm:text-2xl font-serif text-stone-900 font-normal">
+              Team Roster Submitted
             </h2>
-            <p className="text-sm sm:text-base text-slate-600 max-w-lg mx-auto">
+            <p className="text-xs sm:text-sm text-stone-600 max-w-md mx-auto">
               {successData.message}
             </p>
           </div>
 
           {/* Registered Team Summary Card */}
-          <div className="bg-festive-gold-50/50 border border-festive-gold-200 rounded-2xl p-5 text-left space-y-3">
-            <div className="flex justify-between items-center border-b border-festive-gold-200/80 pb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Team ID</span>
-              <span className="font-mono font-bold text-festive-maroon-800 text-sm">
+          <div className="bg-stone-50 border border-stone-200 rounded-md p-4 text-left space-y-2.5 text-xs">
+            <div className="flex justify-between items-center border-b border-stone-200 pb-2">
+              <span className="text-stone-500 font-medium">Team ID</span>
+              <span className="font-mono font-medium text-stone-900 tabular-nums">
                 {successData.team_id}
               </span>
             </div>
-            <div className="flex justify-between items-center border-b border-festive-gold-200/80 pb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Team Name</span>
-              <span className="font-bold text-slate-900 text-base">{successData.team_name}</span>
+            <div className="flex justify-between items-center border-b border-stone-200 pb-2">
+              <span className="text-stone-500 font-medium">Team Name</span>
+              <span className="font-medium text-stone-900">{successData.team_name}</span>
             </div>
-            <div className="flex justify-between items-center border-b border-festive-gold-200/80 pb-3">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Event</span>
-              <span className="font-medium text-slate-800 text-sm">{successData.event_name}</span>
+            <div className="flex justify-between items-center border-b border-stone-200 pb-2">
+              <span className="text-stone-500 font-medium">Event</span>
+              <span className="text-stone-800">{successData.event_name}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-xs font-semibold text-slate-500 uppercase">Captain Email</span>
-              <span className="font-medium text-slate-800 text-sm">{successData.captain_email}</span>
+              <span className="text-stone-500 font-medium">Captain Email</span>
+              <span className="text-stone-800 font-mono">{successData.captain_email}</span>
             </div>
           </div>
 
-          {/* Login prompt notice */}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs sm:text-sm text-amber-900 flex items-start gap-3 text-left">
-            <Mail className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold">Check your Gmail inbox or spam folder</p>
-              <p className="text-amber-800 mt-0.5">
+          {/* Email notice */}
+          <div className="bg-amber-50/70 border border-amber-200 rounded-md p-3.5 text-xs text-amber-900 flex items-start gap-2.5 text-left">
+            <Mail className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-medium">Check your Gmail inbox</p>
+              <p className="text-amber-800 leading-relaxed">
                 {successData.is_new_captain
-                  ? "We have emailed your generated 8-character login password. Log in anytime to view or edit your squad before the deadline."
-                  : "Confirmation has been sent to your email. You can log in using your existing captain password."}
+                  ? "Your 8-character password has been delivered to your email. Use it to log in and manage your roster before the deadline."
+                  : "Confirmation has been emailed. Log in using your existing captain credentials."}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
             <Link
               href="/login"
-              className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-white bg-gradient-to-r from-festive-maroon-700 to-festive-saffron-600 hover:opacity-95 shadow-md shadow-festive-maroon-700/20"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-md font-medium text-white text-sm bg-[#831830] hover:bg-[#6e192c] transition-colors shadow-sm"
             >
               Go to Captain Login <ArrowRight className="w-4 h-4" />
             </Link>
@@ -512,8 +495,9 @@ export default function RegisterTeamPage() {
                 setCaptainId("");
                 setTeamName("");
                 setTeammates([]);
+                setIsEmailConfirmed(false);
               }}
-              className="px-6 py-3.5 rounded-xl font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+              className="px-4 py-2.5 rounded-md font-medium text-xs sm:text-sm text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 transition-colors"
             >
               Register Another Team
             </button>
@@ -529,84 +513,79 @@ export default function RegisterTeamPage() {
   const isSizeValid = currentCount >= minSize && currentCount <= maxSize;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
+    <div className="max-w-2xl mx-auto space-y-6">
       {/* Page Header */}
-      <div className="text-center space-y-2">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-festive-maroon-100 text-festive-maroon-800 text-xs font-bold uppercase tracking-wider">
-          <Sparkles className="w-3.5 h-3.5 text-festive-maroon-700" />
-          MCE Motihari Cultural Fest 2026
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+      <div className="space-y-1.5 border-b border-stone-200 pb-4">
+        <p className="text-xs font-mono uppercase tracking-wider text-stone-500">
+          Cultural Fest Roster Entry
+        </p>
+        <h1 className="text-2xl sm:text-3xl font-serif text-stone-900 tracking-tight font-normal">
           Register a Cultural Team
         </h1>
-        <p className="text-sm sm:text-base text-slate-600 max-w-xl mx-auto">
-          Captains must first fill the individual event form. Search and pick verified classmates
-          for your event squad.
+        <p className="text-xs sm:text-sm text-stone-600">
+          Captains verify individual Google Form submissions, confirm squad size, and register teammates.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-5">
         {/* STEP 1: Select Event */}
-        <div className="bg-white rounded-3xl p-6 sm:p-7 shadow-sm border border-slate-200 space-y-4">
+        <div className="bg-white rounded-lg p-5 sm:p-6 shadow-sm border border-stone-200 space-y-4">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-festive-maroon-700 text-white text-xs flex items-center justify-center font-bold">
+            <label className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+              <span className="w-5 h-5 rounded bg-stone-900 text-white text-xs font-mono flex items-center justify-center font-medium">
                 1
               </span>
               Select Cultural Event
             </label>
             {selectedEvent && (
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Registrations Open
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                Open
               </span>
             )}
           </div>
 
           {loadingEvents ? (
-            <div className="flex items-center justify-center py-6 text-slate-400 gap-2">
-              <Loader2 className="w-5 h-5 animate-spin text-festive-maroon-700" />
-              <span>Loading open cultural events...</span>
+            <div className="flex items-center justify-center py-6 text-stone-400 gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#831830]" />
+              <span className="text-xs">Loading open cultural events...</span>
             </div>
           ) : events.length === 0 ? (
-            <div className="p-4 rounded-2xl bg-amber-50 text-amber-900 text-sm border border-amber-200">
-              No open events found right now. Check the notices page or contact fest coordinators.
+            <div className="p-3.5 rounded-md bg-amber-50 text-amber-900 text-xs border border-amber-200">
+              No open events found right now. Check the notices board or contact the coordinators.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <select
                 value={selectedEventId}
                 onChange={(e) => handleEventChange(e.target.value)}
-                className="w-full px-4 py-3.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium bg-slate-50/50"
+                className="w-full px-3 py-2.5 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900 bg-stone-50/50"
               >
                 {events.map((evt) => (
                   <option key={evt.event_id} value={evt.event_id}>
-                    {evt.event_name} (Team Size: {evt.min_team_size} - {evt.max_team_size})
+                    {evt.event_name} ({evt.min_team_size}–{evt.max_team_size} members)
                   </option>
                 ))}
               </select>
 
               {selectedEvent && (
-                <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 bg-slate-50 p-3 rounded-xl gap-2">
-                  <div className="flex items-center gap-1.5 font-medium">
-                    <Users className="w-3.5 h-3.5 text-festive-maroon-600" />
+                <div className="flex flex-wrap items-center justify-between text-xs text-stone-600 bg-stone-50 p-2.5 rounded-md border border-stone-200/80 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-stone-500" />
                     <span>
-                      Required Squad Size:{" "}
-                      <strong className="text-slate-900">
+                      Squad limits:{" "}
+                      <strong className="font-medium text-stone-900 tabular-nums">
                         {selectedEvent.min_team_size} to {selectedEvent.max_team_size} members
                       </strong>
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <Clock className="w-3.5 h-3.5 text-stone-500" />
                     <span>
                       Deadline:{" "}
-                      <strong className="text-slate-800">
+                      <strong className="font-medium text-stone-900 tabular-nums">
                         {new Date(selectedEvent.deadline).toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
                         })}
                       </strong>
                     </span>
@@ -618,30 +597,30 @@ export default function RegisterTeamPage() {
         </div>
 
         {/* STEP 2: Captain Verification */}
-        <div className="bg-white rounded-3xl p-6 sm:p-7 shadow-sm border border-slate-200 space-y-4">
-          <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-festive-maroon-700 text-white text-xs flex items-center justify-center font-bold">
+        <div className="bg-white rounded-lg p-5 sm:p-6 shadow-sm border border-stone-200 space-y-4">
+          <label className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+            <span className="w-5 h-5 rounded bg-stone-900 text-white text-xs font-mono flex items-center justify-center font-medium">
               2
             </span>
-            Captain Verification (Event Source Sheet)
+            Captain Identity Verification
           </label>
 
-          <p className="text-xs text-slate-500">
-            Enter the Roll Number or Email you used while filling the Google Form for this event.
+          <p className="text-xs text-stone-500">
+            Enter the roll number or email used on the event's Google Form.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col sm:flex-row gap-2.5">
             <div className="relative flex-1">
               <input
                 type="text"
-                placeholder="e.g. 21105128001 or email@domain.com"
+                placeholder="Roll number or email"
                 value={captainId}
                 onChange={(e) => {
                   setCaptainId(e.target.value);
                   setCaptainVerified(null);
                   setCaptainError("");
                 }}
-                className="w-full px-4 py-3.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
+                className="w-full px-3.5 py-2.5 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900 placeholder:text-stone-400"
               />
             </div>
 
@@ -649,7 +628,7 @@ export default function RegisterTeamPage() {
               type="button"
               onClick={handleVerifyCaptain}
               disabled={captainVerifying || !captainId.trim()}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-bold text-white bg-slate-900 hover:bg-festive-maroon-800 transition disabled:opacity-50 text-sm"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-md font-medium text-white bg-stone-900 hover:bg-stone-800 transition-colors disabled:opacity-50 text-xs sm:text-sm shrink-0"
             >
               {captainVerifying ? (
                 <>
@@ -657,21 +636,21 @@ export default function RegisterTeamPage() {
                 </>
               ) : (
                 <>
-                  <UserCheck className="w-4 h-4 text-festive-gold-300" /> Verify Captain
+                  <UserCheck className="w-4 h-4 text-stone-300" /> Verify Captain
                 </>
               )}
             </button>
           </div>
 
-          {/* Captain Error Message */}
+          {/* Captain Error */}
           {captainError && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start gap-2.5 animate-in fade-in">
+            <div className="p-3 rounded-md bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold">{captainError}</p>
-                <p className="text-rose-700 text-xs mt-0.5">
-                  Make sure you have filled the individual participant Google Form for{" "}
-                  <strong>{selectedEvent?.event_name}</strong> and your roll number matches exactly.
+                <p className="font-medium">{captainError}</p>
+                <p className="text-rose-700 mt-0.5">
+                  Confirm that you submitted the individual participant form for{" "}
+                  <strong>{selectedEvent?.event_name}</strong> with this exact roll number.
                 </p>
               </div>
             </div>
@@ -679,83 +658,83 @@ export default function RegisterTeamPage() {
 
           {/* Captain Verified Card */}
           {captainVerified && (
-            <div className="space-y-4 animate-in fade-in">
-              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold">
+            <div className="space-y-3 pt-1">
+              <div className="p-3.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold text-xs">
                     {captainVerified.name.charAt(0)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900">{captainVerified.name}</span>
-                      <span className="text-[10px] font-bold uppercase bg-festive-maroon-700 text-white px-2 py-0.5 rounded-md">
-                        Captain Verified
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-stone-900 text-sm">
+                        {captainVerified.name}
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Verified
                       </span>
                     </div>
-                    <p className="text-slate-600 text-xs">
-                      Roll: <strong>{captainVerified.roll}</strong> • Branch: {captainVerified.branch}
+                    <p className="text-stone-600 font-mono text-[11px]">
+                      Roll: {captainVerified.roll} • {captainVerified.branch}
                     </p>
                   </div>
                 </div>
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               </div>
 
-              {/* Captain Email Input & Gmail Delivery Confirmation Card */}
-              <div className="space-y-3.5 p-4 sm:p-5 rounded-2xl bg-amber-50/70 border border-amber-200/90">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                  <label className="text-xs font-bold uppercase text-amber-900 tracking-wider flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-festive-maroon-700" />
-                    Captain Gmail Address (Live Test Confirmation) *
+              {/* Captain Email Confirmation */}
+              <div className="space-y-3 p-3.5 sm:p-4 rounded-md bg-stone-50 border border-stone-200">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                  <label className="text-xs font-medium text-stone-800 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-stone-500" />
+                    Captain Gmail address (Live test delivery)
                   </label>
                   {isEmailConfirmed ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      Gmail Verified & Confirmed
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      Confirmed
                     </span>
                   ) : (
-                    <span className="text-[11px] font-semibold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-md">
-                      Confirmation Required
+                    <span className="text-[11px] font-mono text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded">
+                      Confirmation required
                     </span>
                   )}
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-2.5">
-                  <div className="relative flex-1">
-                    <input
-                      type="email"
-                      placeholder="e.g. yourname@gmail.com"
-                      value={captainEmailInput}
-                      onChange={(e) => handleEmailChange(e.target.value)}
-                      disabled={isEmailConfirmed}
-                      className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium ${
-                        isEmailConfirmed
-                          ? "bg-emerald-50/70 border-emerald-300 text-emerald-950 font-semibold"
-                          : "bg-white border-slate-300"
-                      }`}
-                      required
-                    />
-                  </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="email"
+                    placeholder="name@gmail.com"
+                    value={captainEmailInput}
+                    onChange={(e) => handleEmailChange(e.target.value)}
+                    disabled={isEmailConfirmed}
+                    className={`flex-1 px-3 py-2 rounded-md border text-xs sm:text-sm ${
+                      isEmailConfirmed
+                        ? "bg-emerald-50/50 border-emerald-300 text-stone-900"
+                        : "bg-white border-stone-300 text-stone-900 focus:outline-none focus:border-[#831830]"
+                    }`}
+                    required
+                  />
 
                   {!isEmailConfirmed ? (
                     <button
                       type="button"
                       onClick={handleSendTestEmail}
                       disabled={emailSendingOtp || !captainEmailInput.trim() || resendCooldown > 0}
-                      className="px-4 py-3 rounded-xl font-bold text-xs sm:text-sm text-white bg-festive-maroon-700 hover:bg-festive-maroon-800 transition disabled:opacity-50 whitespace-nowrap flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99]"
+                      className="px-3.5 py-2 rounded-md font-medium text-xs text-white bg-[#831830] hover:bg-[#6e192c] transition-colors disabled:opacity-50 whitespace-nowrap flex items-center justify-center gap-1.5 shadow-sm"
                     >
                       {emailSendingOtp ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin" /> Sending Test Code...
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending...
                         </>
                       ) : resendCooldown > 0 ? (
                         <>Resend in {resendCooldown}s</>
                       ) : emailOtpSent ? (
                         <>
-                          <RefreshCw className="w-4 h-4" /> Resend Test Code
+                          <RefreshCw className="w-3.5 h-3.5" /> Resend code
                         </>
                       ) : (
                         <>
-                          <Send className="w-4 h-4 text-festive-gold-300" /> Deliver Test Gmail
+                          <Send className="w-3.5 h-3.5 text-amber-200" /> Send test code
                         </>
                       )}
                     </button>
@@ -769,50 +748,46 @@ export default function RegisterTeamPage() {
                         setEmailVerificationMsg(null);
                         setResendCooldown(0);
                       }}
-                      className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-200/80 hover:bg-slate-300 transition"
+                      className="px-3 py-2 rounded-md text-xs font-medium text-stone-700 bg-stone-200 hover:bg-stone-300 transition-colors"
                     >
-                      Edit Email
+                      Change email
                     </button>
                   )}
                 </div>
 
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Click <strong>Deliver Test Gmail</strong> to receive a 6-digit test code in your inbox. This confirms that your Gmail accepts messages from the portal and ensures you receive your team login password.
-                </p>
-
                 {/* OTP Code Entry Card */}
                 {emailOtpSent && !isEmailConfirmed && (
-                  <div className="p-4 rounded-xl bg-white border border-festive-maroon-200 shadow-sm space-y-3 animate-in fade-in">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <KeyRound className="w-4 h-4 text-festive-maroon-700" />
-                        Enter 6-Digit Code Received in Your Gmail:
+                  <div className="p-3 rounded-md bg-white border border-stone-200 space-y-2.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-medium text-stone-800 flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-stone-600" />
+                        Enter 6-digit confirmation code from Gmail
                       </label>
-                      <span className="text-[10px] text-slate-400">Valid for 15 mins</span>
+                      <span className="text-[11px] text-stone-400">Valid 15m</span>
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         type="text"
                         maxLength={6}
-                        placeholder="e.g. 482915"
+                        placeholder="••••••"
                         value={emailOtpCode}
                         onChange={(e) => setEmailOtpCode(e.target.value.replace(/\D/g, ""))}
-                        className="w-full sm:w-44 px-3.5 py-2.5 rounded-xl border border-slate-300 text-center font-mono text-lg font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 bg-slate-50"
+                        className="w-full sm:w-36 px-3 py-1.5 rounded-md border border-stone-300 text-center font-mono text-base font-semibold tracking-widest focus:outline-none focus:border-[#831830] bg-stone-50"
                       />
                       <button
                         type="button"
                         onClick={handleConfirmEmailCode}
                         disabled={emailVerifyingOtp || emailOtpCode.trim().length < 6}
-                        className="flex-1 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white bg-emerald-600 hover:bg-emerald-700 transition disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
+                        className="flex-1 py-1.5 px-3 rounded-md font-medium text-xs text-white bg-emerald-700 hover:bg-emerald-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm"
                       >
                         {emailVerifyingOtp ? (
                           <>
-                            <Loader2 className="w-4 h-4 animate-spin" /> Verifying Code...
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying...
                           </>
                         ) : (
                           <>
-                            <Check className="w-4 h-4" /> Confirm & Verify Gmail
+                            <Check className="w-3.5 h-3.5" /> Confirm code
                           </>
                         )}
                       </button>
@@ -820,19 +795,19 @@ export default function RegisterTeamPage() {
                   </div>
                 )}
 
-                {/* Email Verification Status Message */}
+                {/* Status Message */}
                 {emailVerificationMsg && (
                   <div
-                    className={`p-3 rounded-xl text-xs flex items-start gap-2 ${
+                    className={`p-2.5 rounded-md text-xs flex items-start gap-2 ${
                       emailVerificationMsg.type === "success"
                         ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
                         : "bg-rose-50 text-rose-900 border border-rose-200"
                     }`}
                   >
                     {emailVerificationMsg.type === "success" ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
                     ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
                     )}
                     <span>{emailVerificationMsg.text}</span>
                   </div>
@@ -842,83 +817,78 @@ export default function RegisterTeamPage() {
           )}
         </div>
 
-        {/* STEP 3: Team Details & Teammates */}
-        <div className="bg-white rounded-3xl p-6 sm:p-7 shadow-sm border border-slate-200 space-y-6">
-          <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-festive-maroon-700 text-white text-xs flex items-center justify-center font-bold">
+        {/* STEP 3: Team Details & Squad Selection */}
+        <div className="bg-white rounded-lg p-5 sm:p-6 shadow-sm border border-stone-200 space-y-5">
+          <label className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+            <span className="w-5 h-5 rounded bg-stone-900 text-white text-xs font-mono flex items-center justify-center font-medium">
               3
             </span>
-            Team Details & Squad Selection
+            Team Details & Squad Assembly
           </label>
 
-          {/* Team Name Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-              Team Name *
+          {/* Team Name */}
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-stone-700">
+              Team name *
             </label>
             <input
               type="text"
-              placeholder="e.g. Rhythm Riders, The Champaran Grooves"
+              placeholder="e.g. Rhythm Riders"
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
-              className="w-full px-4 py-3.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
+              className="w-full px-3 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900"
               required
             />
-            <p className="text-[11px] text-slate-500">
-              Team name must be unique within this event (case-insensitive).
+            <p className="text-[11px] text-stone-500">
+              Team name must be unique within this competition.
             </p>
           </div>
 
           {/* Teammate Search Box */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase text-slate-700 tracking-wider">
-                Search Teammates (This Event Only)
+              <label className="text-xs font-medium text-stone-700">
+                Search verified participants
               </label>
               {selectedEvent && (
                 <span
-                  className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                  className={`text-[11px] font-mono px-2 py-0.5 rounded border ${
                     isSizeValid
-                      ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                      : "bg-amber-50 text-amber-800 border-amber-300"
+                      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                      : "bg-amber-50 text-amber-800 border-amber-200"
                   }`}
                 >
-                  {isSizeValid ? (
-                    <>Squad Ready: {currentCount} of {minSize}-{maxSize} Members ✅</>
-                  ) : (
-                    <>
-                      {currentCount} of {minSize}-{maxSize} Members{" "}
-                      {currentCount < minSize ? `(Need ${minSize - currentCount} more)` : `(Max ${maxSize})`}
-                    </>
-                  )}
+                  {isSizeValid
+                    ? `Squad count: ${currentCount} (${minSize}–${maxSize})`
+                    : `${currentCount} / ${minSize}–${maxSize} members ${
+                        currentCount < minSize ? `(need ${minSize - currentCount} more)` : `(max ${maxSize})`
+                      }`}
                 </span>
               )}
             </div>
 
             <div className="relative">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Type classmate's Roll Number or Name..."
-                  value={searchQuery}
-                  onFocus={() => setSearchFocused(true)}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3.5 rounded-2xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-festive-maroon-700 text-sm font-medium"
-                />
-                {searching && (
-                  <Loader2 className="w-4 h-4 animate-spin text-festive-maroon-700 absolute right-4 top-1/2 -translate-y-1/2" />
-                )}
-              </div>
+              <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Type classmate's roll number or name..."
+                value={searchQuery}
+                onFocus={() => setSearchFocused(true)}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 rounded-md border border-stone-300 focus:outline-none focus:border-[#831830] text-sm text-stone-900"
+              />
+              {searching && (
+                <Loader2 className="w-4 h-4 animate-spin text-stone-500 absolute right-3 top-1/2 -translate-y-1/2" />
+              )}
 
               {/* Live Suggestions Dropdown */}
               {searchFocused && searchQuery.trim().length >= 2 && (
-                <div className="absolute left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 z-30 max-h-60 overflow-y-auto divide-y divide-slate-100">
+                <div className="absolute left-0 right-0 mt-1.5 bg-white rounded-md shadow-lg border border-stone-200 z-30 max-h-56 overflow-y-auto divide-y divide-stone-100">
                   {searchResults.length === 0 ? (
-                    <div className="p-4 text-center text-xs text-slate-500">
+                    <div className="p-3 text-center text-xs text-stone-500">
                       {searching
-                        ? "Searching event registrations..."
-                        : "No matching registered students found in this event form."}
+                        ? "Searching event submissions..."
+                        : "No matching registered students found for this event."}
                     </div>
                   ) : (
                     searchResults.map((student) => (
@@ -926,18 +896,17 @@ export default function RegisterTeamPage() {
                         key={student.roll}
                         type="button"
                         onClick={() => handleAddTeammate(student)}
-                        className="w-full text-left px-4 py-3 hover:bg-festive-maroon-50/60 flex items-center justify-between transition group"
+                        className="w-full text-left px-3.5 py-2.5 hover:bg-stone-50 flex items-center justify-between transition-colors"
                       >
                         <div>
-                          <div className="font-semibold text-sm text-slate-900 group-hover:text-festive-maroon-800">
+                          <div className="font-medium text-xs sm:text-sm text-stone-900">
                             {student.name}
                           </div>
-                          <div className="text-xs text-slate-500">
-                            Roll: <span className="font-mono">{student.roll}</span> • {student.branch}{" "}
-                            {student.email_masked && `• ${student.email_masked}`}
+                          <div className="text-[11px] text-stone-500 font-mono">
+                            Roll: {student.roll} • {student.branch}
                           </div>
                         </div>
-                        <span className="text-xs font-bold text-festive-maroon-700 group-hover:bg-festive-maroon-700 group-hover:text-white px-2.5 py-1 rounded-lg border border-festive-maroon-200 transition">
+                        <span className="text-xs font-medium text-[#831830] bg-[#fdf2f4] px-2 py-0.5 rounded border border-[#f2a4b2]">
                           + Add
                         </span>
                       </button>
@@ -952,35 +921,35 @@ export default function RegisterTeamPage() {
             )}
           </div>
 
-          {/* Members List (Squad Chips) */}
-          <div className="space-y-3 pt-2">
-            <h4 className="text-xs font-bold uppercase text-slate-500 tracking-wider">
-              Current Squad ({currentCount} Members)
+          {/* Members List */}
+          <div className="space-y-2 pt-1">
+            <h4 className="text-xs font-medium text-stone-600">
+              Current Squad ({currentCount} members)
             </h4>
 
             {currentCount === 0 ? (
-              <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-xs">
-                Verify captain identity above to begin adding teammates.
+              <div className="p-4 text-center border border-dashed border-stone-200 rounded-md text-stone-400 text-xs">
+                Verify captain identity above to begin assembling teammates.
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Captain Chip (Pinned) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Captain Chip */}
                 {captainVerified && (
-                  <div className="p-3 rounded-2xl bg-festive-gold-50 border border-festive-gold-300 flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-festive-maroon-700 text-white font-bold text-xs flex items-center justify-center">
+                  <div className="p-2.5 rounded-md bg-stone-100 border border-stone-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded bg-stone-900 text-white font-mono font-medium text-xs flex items-center justify-center">
                         C
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                          <span className="font-medium text-stone-900 text-xs">
                             {captainVerified.name}
                           </span>
-                          <span className="text-[10px] font-bold bg-festive-maroon-700 text-white px-1.5 py-0.2 rounded">
+                          <span className="text-[10px] font-mono px-1 py-0.1 rounded bg-stone-200 text-stone-700">
                             Captain
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500">
+                        <div className="text-[11px] text-stone-500 font-mono">
                           {captainVerified.roll} • {captainVerified.branch}
                         </div>
                       </div>
@@ -988,21 +957,21 @@ export default function RegisterTeamPage() {
                   </div>
                 )}
 
-                {/* Added Teammates */}
+                {/* Teammates */}
                 {teammates.map((teammate) => (
                   <div
                     key={teammate.roll}
-                    className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between hover:border-slate-300 transition"
+                    className="p-2.5 rounded-md bg-white border border-stone-200 flex items-center justify-between"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded bg-stone-100 text-stone-700 font-mono text-xs flex items-center justify-center">
                         {teammate.name.charAt(0)}
                       </div>
                       <div>
-                        <div className="font-semibold text-slate-900 text-xs sm:text-sm">
+                        <div className="font-medium text-stone-900 text-xs">
                           {teammate.name}
                         </div>
-                        <div className="text-[11px] text-slate-500">
+                        <div className="text-[11px] text-stone-500 font-mono">
                           {teammate.roll} • {teammate.branch}
                         </div>
                       </div>
@@ -1011,10 +980,10 @@ export default function RegisterTeamPage() {
                     <button
                       type="button"
                       onClick={() => handleRemoveTeammate(teammate.roll)}
-                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                      className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                       title="Remove teammate"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 ))}
@@ -1023,18 +992,18 @@ export default function RegisterTeamPage() {
           </div>
         </div>
 
-        {/* Submission Error Banner */}
+        {/* Error Banner */}
         {submitError && (
-          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-sm flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="p-3 rounded-md bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold">Registration Incomplete</p>
-              <p className="text-xs sm:text-sm mt-0.5">{submitError}</p>
+              <p className="font-medium">Registration incomplete</p>
+              <p className="mt-0.5">{submitError}</p>
             </div>
           </div>
         )}
 
-        {/* Submit Action Button */}
+        {/* Submit Button */}
         <button
           type="submit"
           disabled={
@@ -1044,30 +1013,27 @@ export default function RegisterTeamPage() {
             !isEmailConfirmed ||
             !isSizeValid
           }
-          className="w-full py-4 rounded-2xl font-bold text-white text-base bg-gradient-to-r from-festive-maroon-700 via-festive-maroon-800 to-festive-saffron-600 hover:opacity-95 transition-all shadow-xl shadow-festive-maroon-800/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-[0.99]"
+          className="w-full py-3 rounded-md font-medium text-white text-sm bg-[#831830] hover:bg-[#6e192c] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {submitting ? (
             <>
-              <Loader2 className="w-5 h-5 animate-spin" /> Registering Team with Apps Script...
+              <Loader2 className="w-4 h-4 animate-spin" /> Submitting squad roster...
             </>
           ) : (
-            <>
-              <Sparkles className="w-5 h-5 text-festive-gold-300" />
-              Complete Team Registration
-            </>
+            "Complete Team Registration"
           )}
         </button>
 
         {!isEmailConfirmed && captainVerified && (
-          <p className="text-center text-xs text-amber-700 font-medium">
-            ⚠️ Please confirm your Gmail address above by entering the 6-digit test code before completing registration.
+          <p className="text-center text-xs text-amber-800 font-medium">
+            Please confirm your Gmail address above by entering the 6-digit test code before submitting.
           </p>
         )}
 
-        <p className="text-center text-xs text-slate-500">
+        <p className="text-center text-xs text-stone-500">
           Already registered a team?{" "}
-          <Link href="/login" className="text-festive-maroon-700 font-bold hover:underline">
-            Captain Login to Manage Squad
+          <Link href="/login" className="text-[#831830] font-medium hover:underline">
+            Captain login
           </Link>
         </p>
       </form>
