@@ -23,6 +23,7 @@ export default function RegisterTeamPage() {
   // Data states
   const [events, setEvents] = useState<EventItem[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>("");
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string>("");
   const [loadingEvents, setLoadingEvents] = useState<boolean>(true);
 
   // Form states
@@ -64,6 +65,7 @@ export default function RegisterTeamPage() {
     captain_email: string;
     is_new_captain: boolean;
     message: string;
+    sub_category?: string;
   } | null>(null);
 
   const searchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -95,9 +97,10 @@ export default function RegisterTeamPage() {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  // When event changes, reset captain verification, teammates, and email confirmation
+  // When event changes, reset captain verification, category, teammates, and email confirmation
   const handleEventChange = (eventId: string) => {
     setSelectedEventId(eventId);
+    setSelectedSubCategory("");
     setCaptainVerified(null);
     setCaptainError("");
     setTeammates([]);
@@ -113,7 +116,17 @@ export default function RegisterTeamPage() {
 
   const selectedEvent = events.find((e) => e.event_id === selectedEventId);
 
-  // Verify Captain in Event's Source Sheet
+  // Extract available sub-categories for selected event (e.g. Quiz, Crossword, Both)
+  const availableSubCategories: string[] = selectedEvent?.sub_categories
+    ? Array.isArray(selectedEvent.sub_categories)
+      ? selectedEvent.sub_categories
+      : String(selectedEvent.sub_categories)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+    : [];
+
+  // Verify Captain in Event's Source Sheet & Check Existing Registrations
   const handleVerifyCaptain = async () => {
     const trimmedId = captainId.trim();
     if (!trimmedId) {
@@ -129,29 +142,71 @@ export default function RegisterTeamPage() {
     setCaptainError("");
 
     try {
-      const res = await callApi<Student[]>({
-        action: "searchStudents",
+      // 1. Try verifyCaptain action first (checks both source sheet existence AND duplicates)
+      let res = await callApi<any>({
+        action: "verifyCaptain",
         event_id: selectedEventId,
-        query: trimmedId,
+        identifier: trimmedId,
       });
 
-      if (res.ok && res.data && res.data.length > 0) {
-        const exact = res.data.find(
-          (s) =>
-            s.roll.toLowerCase() === trimmedId.toLowerCase() ||
-            s.name.toLowerCase() === trimmedId.toLowerCase()
-        );
-        const match = exact || res.data[0];
-
-        setCaptainVerified({
-          ...match,
-          is_captain: true,
+      // 2. Fallback to searchStudents if verifyCaptain is unrecognized on older backend
+      if (!res.ok && res.error && res.error.includes("Unknown action")) {
+        res = await callApi<Student[]>({
+          action: "searchStudents",
+          event_id: selectedEventId,
+          query: trimmedId,
         });
-        setCaptainError("");
+      }
+
+      if (res.ok && res.data) {
+        let student: Student | null = null;
+        if (res.data.student) {
+          student = res.data.student;
+        } else if (Array.isArray(res.data) && res.data.length > 0) {
+          const exact = res.data.find(
+            (s: Student) =>
+              s.roll.toLowerCase() === trimmedId.toLowerCase() ||
+              s.name.toLowerCase() === trimmedId.toLowerCase()
+          );
+          student = exact || res.data[0];
+        }
+
+        if (student) {
+          // Check if student was flagged as already registered
+          if (student.already_registered) {
+            setCaptainVerified(null);
+            setCaptainError(
+              `You (${student.name}, Roll: ${student.roll}) are already registered in team '${student.registered_team}' for this event. A participant can join or lead only one team per event.`
+            );
+            return;
+          }
+
+          setCaptainVerified({
+            ...student,
+            is_captain: true,
+          });
+          setCaptainError("");
+
+          // If student has a participation choice from the Form, auto-suggest or select it
+          if (student.participation && availableSubCategories.length > 0) {
+            const matchedCategory = availableSubCategories.find(
+              (sc) => sc.toLowerCase() === student!.participation!.toLowerCase()
+            );
+            if (matchedCategory && !selectedSubCategory) {
+              setSelectedSubCategory(matchedCategory);
+            }
+          }
+        } else {
+          setCaptainVerified(null);
+          setCaptainError(
+            "Participant not found in individual form for this event. Fill the individual form first."
+          );
+        }
       } else {
         setCaptainVerified(null);
         setCaptainError(
-          "Participant not found in individual form for this event. Fill the individual form first."
+          res.error ||
+            "Participant not found in individual form for this event. Ensure you submitted the individual participant form."
         );
       }
     } catch (err: any) {
@@ -314,6 +369,13 @@ export default function RegisterTeamPage() {
   const handleAddTeammate = (student: Student) => {
     if (!selectedEvent) return;
 
+    if (student.already_registered) {
+      setSearchError(
+        `${student.name} (Roll: ${student.roll}) is already registered in team '${student.registered_team}' for this event.`
+      );
+      return;
+    }
+
     const currentMax = Number(selectedEvent.max_team_size) || 10;
     const totalMembers = (captainVerified ? 1 : 0) + teammates.length + 1;
     if (totalMembers > currentMax) {
@@ -344,6 +406,14 @@ export default function RegisterTeamPage() {
 
     if (!captainVerified) {
       setSubmitError("Please verify your captain identity first.");
+      return;
+    }
+
+    // Validate internal sub-category choice if event has options
+    if (availableSubCategories.length > 0 && !selectedSubCategory) {
+      setSubmitError(
+        `Please choose your participation category (${availableSubCategories.join(", ")}).`
+      );
       return;
     }
 
@@ -390,12 +460,14 @@ export default function RegisterTeamPage() {
           roll: captainVerified.roll,
           branch: captainVerified.branch,
           is_captain: true,
+          participation: captainVerified.participation,
         },
         ...teammates.map((t) => ({
           name: t.name,
           roll: t.roll,
           branch: t.branch,
           is_captain: false,
+          participation: t.participation,
         })),
       ];
 
@@ -406,6 +478,7 @@ export default function RegisterTeamPage() {
         captain_email: string;
         is_new_captain: boolean;
         message: string;
+        sub_category?: string;
       }>({
         action: "registerTeam",
         event_id: selectedEventId,
@@ -414,6 +487,7 @@ export default function RegisterTeamPage() {
         verification_code: emailOtpCode.trim(),
         team_name: teamName.trim(),
         members: payloadMembers,
+        sub_category: selectedSubCategory,
       });
 
       if (res.ok && res.data) {
@@ -438,6 +512,7 @@ export default function RegisterTeamPage() {
 
   const handleResetForm = () => {
     setSuccessData(null);
+    setSelectedSubCategory("");
     setTeamName("");
     setTeammates([]);
     setCaptainVerified(null);
@@ -493,6 +568,14 @@ export default function RegisterTeamPage() {
               <span className="text-gray-500">Event:</span>
               <span className="font-semibold text-gray-900">{successData.event_name}</span>
             </div>
+            {successData.sub_category && (
+              <div className="flex justify-between py-1 border-b border-gray-200/60">
+                <span className="text-gray-500">Category / Competition:</span>
+                <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {successData.sub_category}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between py-1 border-b border-gray-200/60">
               <span className="text-gray-500">Captain Email:</span>
               <span className="font-medium text-gray-900">{successData.captain_email}</span>
@@ -562,6 +645,46 @@ export default function RegisterTeamPage() {
               {minSize}–{maxSize} members · Closes {formattedDeadline}
             </p>
           )}
+
+          {/* Internal Category / Competition Choice (Shown when event has choices like Quiz, Crossword, Both) */}
+          {availableSubCategories.length > 0 && (
+            <div className="space-y-2 p-3.5 sm:p-4 rounded-[12px] bg-blue-50/60 border border-blue-200/80 mt-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <label className="text-xs font-semibold text-gray-900 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#2563EB]"></span>
+                  Select Competition Category *
+                </label>
+                {captainVerified?.participation && (
+                  <span className="text-[11px] font-medium text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full self-start sm:self-auto border border-blue-200">
+                    Your Form Entry: <strong>{captainVerified.participation}</strong>
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-600">
+                This event accepts registrations for multiple competitions. Select what your team is registering for:
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+                {availableSubCategories.map((choice) => {
+                  const isSelected = selectedSubCategory === choice;
+                  return (
+                    <button
+                      key={choice}
+                      type="button"
+                      onClick={() => setSelectedSubCategory(choice)}
+                      className={`px-3 py-2.5 rounded-[8px] text-xs font-semibold border text-center transition-all flex items-center justify-center gap-1.5 ${
+                        isSelected
+                          ? "bg-[#2563EB] text-white border-[#2563EB] shadow-xs ring-2 ring-[#2563EB]/25"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-blue-400 hover:bg-blue-50/40"
+                      }`}
+                    >
+                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                      <span>{choice}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 2. Captain Verification Section */}
@@ -601,19 +724,39 @@ export default function RegisterTeamPage() {
 
           {/* Captain Verified Feedback */}
           {captainVerified && (
-            <div className="flex items-center gap-1.5 pt-0.5 text-xs text-emerald-700 font-medium">
+            <div className="flex items-center gap-1.5 pt-0.5 text-xs text-emerald-700 font-medium flex-wrap">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>
-                Verified: {captainVerified.name} ({captainVerified.branch}
+                Verified: <strong>{captainVerified.name}</strong> ({captainVerified.branch}
                 {captainVerified.roll ? ` · ${captainVerified.roll}` : ""})
               </span>
+              {captainVerified.participation && (
+                <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200">
+                  Form: {captainVerified.participation}
+                </span>
+              )}
             </div>
           )}
 
           {captainError && (
-            <div className="flex items-start gap-1.5 pt-0.5 text-xs text-rose-600 font-medium">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <span>{captainError}</span>
+            <div
+              className={`flex items-start gap-2 p-3 rounded-[10px] text-xs font-medium ${
+                captainError.toLowerCase().includes("already")
+                  ? "bg-amber-50 text-amber-900 border border-amber-200"
+                  : "bg-rose-50 text-rose-700 border border-rose-200"
+              }`}
+            >
+              <AlertCircle
+                className={`w-4 h-4 shrink-0 mt-0.5 ${
+                  captainError.toLowerCase().includes("already") ? "text-amber-600" : "text-rose-600"
+                }`}
+              />
+              <div className="space-y-0.5">
+                {captainError.toLowerCase().includes("already") && (
+                  <span className="font-semibold block text-amber-950">Already Registered for this Event</span>
+                )}
+                <span className="leading-relaxed">{captainError}</span>
+              </div>
             </div>
           )}
 
@@ -792,22 +935,46 @@ export default function RegisterTeamPage() {
               {/* Autocomplete Dropdown */}
               {searchResults.length > 0 && searchFocused && (
                 <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-[10px] shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
-                  {searchResults.map((st) => (
-                    <button
-                      key={st.roll}
-                      type="button"
-                      onMouseDown={() => handleAddTeammate(st)}
-                      className="w-full px-3.5 py-2.5 text-left hover:bg-rose-50 flex items-center justify-between transition-colors text-sm"
-                    >
-                      <div>
-                        <span className="font-medium text-gray-900">{st.name}</span>
-                        <span className="text-gray-500 text-xs ml-1.5 font-normal">
-                          · {st.roll} ({st.branch})
-                        </span>
-                      </div>
-                      <span className="text-xs font-semibold text-[#2563EB]">+ Add</span>
-                    </button>
-                  ))}
+                  {searchResults.map((st) => {
+                    const isTaken = !!st.already_registered;
+                    return (
+                      <button
+                        key={st.roll}
+                        type="button"
+                        onMouseDown={() => handleAddTeammate(st)}
+                        className={`w-full px-3.5 py-2.5 text-left flex items-center justify-between transition-colors text-sm ${
+                          isTaken
+                            ? "bg-stone-50/80 cursor-not-allowed hover:bg-stone-100/90"
+                            : "hover:bg-rose-50"
+                        }`}
+                      >
+                        <div>
+                          <span
+                            className={`font-medium ${
+                              isTaken ? "text-stone-400 line-through" : "text-gray-900"
+                            }`}
+                          >
+                            {st.name}
+                          </span>
+                          <span className="text-gray-500 text-xs ml-1.5 font-normal">
+                            · {st.roll} ({st.branch})
+                          </span>
+                          {st.participation && (
+                            <span className="text-[10px] text-blue-700 bg-blue-50 px-1 py-0.2 rounded ml-1 font-mono border border-blue-200">
+                              {st.participation}
+                            </span>
+                          )}
+                        </div>
+                        {isTaken ? (
+                          <span className="text-[10px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 shrink-0">
+                            In: {st.registered_team}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold text-[#2563EB] shrink-0">+ Add</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

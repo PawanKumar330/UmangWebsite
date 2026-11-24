@@ -7,6 +7,7 @@ export interface EventItem {
   max_team_size: number;
   deadline: string; // ISO string
   is_open: boolean;
+  sub_categories?: string[] | string;
 }
 
 export interface Student {
@@ -15,6 +16,9 @@ export interface Student {
   branch: string;
   email_masked?: string;
   is_captain?: boolean;
+  participation?: string;
+  already_registered?: boolean;
+  registered_team?: string;
 }
 
 export interface TeamMember {
@@ -22,6 +26,7 @@ export interface TeamMember {
   roll: string;
   branch: string;
   is_captain: boolean;
+  participation?: string;
 }
 
 export interface Team {
@@ -39,6 +44,7 @@ export interface Team {
   max_team_size?: number;
   created_at?: string;
   updated_at?: string;
+  sub_category?: string;
 }
 
 export interface Notice {

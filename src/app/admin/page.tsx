@@ -70,6 +70,7 @@ export default function AdminPage() {
     max_team_size: number;
     deadline: string;
     is_open: boolean;
+    sub_categories: string;
   }>({
     event_id: "",
     event_name: "",
@@ -79,6 +80,7 @@ export default function AdminPage() {
     max_team_size: 6,
     deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
     is_open: true,
+    sub_categories: "",
   });
   const [savingEvent, setSavingEvent] = useState(false);
   const [eventModalMsg, setEventModalMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -217,6 +219,9 @@ export default function AdminPage() {
     setInspectResult(null);
     if (evt) {
       setEditingEventId(evt.event_id);
+      const subCatStr = Array.isArray(evt.sub_categories)
+        ? evt.sub_categories.join(", ")
+        : evt.sub_categories || "";
       setEventFormData({
         event_id: evt.event_id,
         event_name: evt.event_name,
@@ -226,6 +231,7 @@ export default function AdminPage() {
         max_team_size: evt.max_team_size,
         deadline: evt.deadline ? new Date(evt.deadline).toISOString().slice(0, 16) : "",
         is_open: evt.is_open,
+        sub_categories: subCatStr,
       });
     } else {
       setEditingEventId(null);
@@ -238,6 +244,7 @@ export default function AdminPage() {
         max_team_size: 8,
         deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
         is_open: true,
+        sub_categories: "",
       });
     }
     setEventModalOpen(true);
@@ -637,6 +644,23 @@ export default function AdminPage() {
                       <FileSpreadsheet className="w-3.5 h-3.5 text-stone-500 shrink-0" />
                       <span>Source: {evt.source_sheet_id || "(Not configured yet)"}</span>
                     </div>
+
+                    {evt.sub_categories && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                        <span className="text-[11px] font-medium text-stone-500">Choices:</span>
+                        {(Array.isArray(evt.sub_categories)
+                          ? evt.sub_categories
+                          : String(evt.sub_categories).split(",").map(s => s.trim()).filter(Boolean)
+                        ).map((sc, idx) => (
+                          <span
+                            key={idx}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium"
+                          >
+                            {sc}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -695,6 +719,7 @@ export default function AdminPage() {
                   <tr>
                     <th className="px-4 py-2.5">Team</th>
                     <th className="px-4 py-2.5">Event</th>
+                    <th className="px-4 py-2.5">Category</th>
                     <th className="px-4 py-2.5">Captain Email</th>
                     <th className="px-4 py-2.5">Roster</th>
                     <th className="px-4 py-2.5">Status</th>
@@ -704,7 +729,7 @@ export default function AdminPage() {
                 <tbody className="divide-y divide-stone-100">
                   {filteredTeams.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-stone-400">
+                      <td colSpan={7} className="px-4 py-8 text-center text-stone-400">
                         No registered teams found.
                       </td>
                     </tr>
@@ -717,6 +742,15 @@ export default function AdminPage() {
                         </td>
                         <td className="px-4 py-3 font-medium text-stone-800">
                           {team.event_name || team.event_id}
+                        </td>
+                        <td className="px-4 py-3">
+                          {team.sub_category ? (
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                              {team.sub_category}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-stone-400">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 font-mono text-stone-600">
                           {team.captain_email}
@@ -1173,6 +1207,27 @@ export default function AdminPage() {
                 />
               </div>
 
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-stone-700">
+                    Internal Categories / Choices (Optional)
+                  </label>
+                  <span className="text-[10px] text-stone-400">Comma-separated</span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="e.g. Quiz, Crossword, Both"
+                  value={eventFormData.sub_categories}
+                  onChange={(e) =>
+                    setEventFormData({ ...eventFormData, sub_categories: e.target.value })
+                  }
+                  className="w-full px-3 py-2 rounded-md border border-stone-300 text-xs sm:text-sm text-stone-900"
+                />
+                <p className="text-[11px] text-stone-500">
+                  If this Google Form serves multiple competitions (e.g. Quiz & Crossword), specify the choices. Captains will select whether to register for Quiz, Crossword, or Both on the portal.
+                </p>
+              </div>
+
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -1253,6 +1308,14 @@ export default function AdminPage() {
                 <div>
                   Team ID: <span className="font-mono">{viewingTeam.team_id}</span>
                 </div>
+                {viewingTeam.sub_category && (
+                  <div>
+                    Participation Category:{" "}
+                    <span className="font-mono text-blue-800 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200 font-medium">
+                      {viewingTeam.sub_category}
+                    </span>
+                  </div>
+                )}
                 <div>
                   Registration status:{" "}
                   <span className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">

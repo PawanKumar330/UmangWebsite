@@ -246,13 +246,17 @@ function handleGetEvents() {
 
     // Only include if open and deadline hasn't passed
     if (isOpen && !isDeadlinePassed) {
+      const rawSub = row[8] ? String(row[8]).trim() : "";
+      const subCategories = rawSub ? rawSub.split(",").map(s => s.trim()).filter(Boolean) : [];
+
       events.push({
         event_id: eventId,
         event_name: String(row[idxName] || ""),
         min_team_size: parseInt(row[idxMin], 10) || 1,
         max_team_size: parseInt(row[idxMax], 10) || 10,
         deadline: deadlineDate.toISOString(),
-        is_open: true
+        is_open: true,
+        sub_categories: subCategories
       });
     }
   }
@@ -261,8 +265,57 @@ function handleGetEvents() {
 }
 
 /**
+ * Scans Teams tab for a given eventId and maps all registered captains and members.
+ * Prevents multiple registrations by the same student (as captain or teammate).
+ */
+function getRegisteredParticipantsInEvent(ss, eventId) {
+  const teamsSheet = getSheetOrInit(ss, CONFIG.TABS.TEAMS);
+  const data = teamsSheet.getDataRange().getValues();
+  const registeredCaptains = {}; // emailNorm -> teamName, rollNorm -> teamName
+  const registeredMembers = {}; // rollNorm -> { name, teamName, isCaptain }, emailNorm -> ...
+
+  for (let i = 1; i < data.length; i++) {
+    const rowEventId = String(data[i][1] || "").trim();
+    if (rowEventId !== eventId) continue;
+
+    const rowTeamName = String(data[i][2] || "").trim();
+    const rowCaptainEmail = normalizeString(data[i][3]);
+    if (rowCaptainEmail) {
+      registeredCaptains[rowCaptainEmail] = rowTeamName;
+    }
+
+    let members = [];
+    try {
+      members = JSON.parse(data[i][4]);
+    } catch (e) {
+      members = [];
+    }
+
+    for (let j = 0; j < members.length; j++) {
+      const mRoll = normalizeString(members[j].roll);
+      const mEmail = normalizeString(members[j].email);
+      const mName = members[j].name || "Student";
+      const isCaptain = !!members[j].is_captain;
+
+      if (mRoll) {
+        registeredMembers[mRoll] = { name: mName, teamName: rowTeamName, isCaptain: isCaptain };
+        if (isCaptain) {
+          registeredCaptains[mRoll] = rowTeamName;
+        }
+      }
+      if (mEmail) {
+        registeredMembers[mEmail] = { name: mName, teamName: rowTeamName, isCaptain: isCaptain };
+      }
+    }
+  }
+
+  return { registeredCaptains: registeredCaptains, registeredMembers: registeredMembers };
+}
+
+/**
  * Search students from THAT specific event's source sheet.
  * Masks emails: e.g. "p***@gmail.com".
+ * Checks if students are already participating in another team for this event.
  * Caches source sheet rows for 2 minutes to keep response snappy.
  */
 function handleSearchStudents(payload) {
@@ -286,6 +339,8 @@ function handleSearchStudents(payload) {
   }
 
   const students = getSourceSheetStudents(event.source_sheet_id, event.source_tab_name);
+  const ss = getPortalDb();
+  const reg = getRegisteredParticipantsInEvent(ss, eventId);
 
   // Search by Roll Number or Name
   const results = [];
@@ -293,15 +348,20 @@ function handleSearchStudents(payload) {
     const s = students[i];
     const nameNorm = normalizeString(s.name);
     const rollNorm = normalizeString(s.roll);
+    const emailNorm = normalizeString(s.email);
 
     if (nameNorm.includes(query) || rollNorm.includes(query)) {
+      const existing = (rollNorm && reg.registeredMembers[rollNorm]) || (emailNorm && reg.registeredMembers[emailNorm]);
       results.push({
         name: s.name,
         roll: s.roll,
         branch: s.branch,
-        email_masked: maskEmail(s.email)
+        email_masked: maskEmail(s.email),
+        participation: s.participation || "",
+        already_registered: !!existing,
+        registered_team: existing ? existing.teamName : ""
       });
-      if (results.length >= 15) break; // Limit suggestions
+      if (results.length >= 20) break; // Limit suggestions
     }
   }
 
@@ -310,6 +370,7 @@ function handleSearchStudents(payload) {
 
 /**
  * Verify Captain exists in Event Source Sheet.
+ * Immediately checks and prevents already-registered captains/members from duplicate registrations.
  */
 function handleVerifyCaptain(payload) {
   const eventId = String(payload.event_id || "").trim();
@@ -332,25 +393,55 @@ function handleVerifyCaptain(payload) {
     (s.email && normalizeString(s.email) === identifier)
   );
 
-  if (match) {
+  if (!match) {
     return {
-      ok: true,
-      data: {
-        found: true,
-        student: {
-          name: match.name,
-          roll: match.roll,
-          email: maskEmail(match.email),
-          branch: match.branch,
-          is_captain: true
-        }
-      }
+      ok: false,
+      error: "Participant not found in the Google Form submissions for this event. Ensure you filled the individual participant form."
+    };
+  }
+
+  const rollNorm = normalizeString(match.roll);
+  const emailNorm = normalizeString(match.email);
+
+  // Check if student has already registered for this event
+  const ss = getPortalDb();
+  const reg = getRegisteredParticipantsInEvent(ss, eventId);
+
+  // 1. Captain duplicate check
+  if ((emailNorm && reg.registeredCaptains[emailNorm]) || (rollNorm && reg.registeredCaptains[rollNorm])) {
+    const existingTeam = (emailNorm && reg.registeredCaptains[emailNorm]) || reg.registeredCaptains[rollNorm];
+    return {
+      ok: false,
+      error: `You (${match.name}, Roll: ${match.roll}) have already registered team '${existingTeam}' as captain for this event. A captain can lead only one team per event.`,
+      already_registered: true,
+      existing_team: existingTeam
+    };
+  }
+
+  // 2. Member duplicate check
+  if ((rollNorm && reg.registeredMembers[rollNorm]) || (emailNorm && reg.registeredMembers[emailNorm])) {
+    const existing = (rollNorm && reg.registeredMembers[rollNorm]) || reg.registeredMembers[emailNorm];
+    return {
+      ok: false,
+      error: `You (${match.name}, Roll: ${match.roll}) are already participating in team '${existing.teamName}' for this event. A student can participate in only one team per event.`,
+      already_registered: true,
+      existing_team: existing.teamName
     };
   }
 
   return {
-    ok: false,
-    error: "Participant not found in the Google Form submissions for this event. Ensure you filled the individual participant form."
+    ok: true,
+    data: {
+      found: true,
+      student: {
+        name: match.name,
+        roll: match.roll,
+        email: maskEmail(match.email),
+        branch: match.branch,
+        participation: match.participation || "",
+        is_captain: true
+      }
+    }
   };
 }
 
@@ -416,7 +507,9 @@ function handleRegisterTeam(payload) {
         return { ok: false, error: "A team with this name already exists in this event. Please choose another name." };
       }
 
-      existingCaptainsInEvent.add(rowCaptain);
+      if (rowCaptain) {
+        existingCaptainsInEvent.add(rowCaptain);
+      }
 
       let rowMembers = [];
       try {
@@ -427,13 +520,38 @@ function handleRegisterTeam(payload) {
 
       for (let j = 0; j < rowMembers.length; j++) {
         const mRoll = normalizeString(rowMembers[j].roll);
+        const mEmail = normalizeString(rowMembers[j].email);
         if (mRoll) {
           registeredMembersInEvent[mRoll] = {
             name: rowMembers[j].name || "Student",
             teamName: rowTeamName
           };
+          if (rowMembers[j].is_captain) {
+            existingCaptainsInEvent.add(mRoll);
+          }
+        }
+        if (mEmail) {
+          registeredMembersInEvent[mEmail] = {
+            name: rowMembers[j].name || "Student",
+            teamName: rowTeamName
+          };
+          if (rowMembers[j].is_captain) {
+            existingCaptainsInEvent.add(mEmail);
+          }
         }
       }
+    }
+
+    // Check Sub-Category / Internal Choice requirement
+    const subCategory = String(payload.sub_category || "").trim();
+    const eventSubCategories = event.sub_categories
+      ? (Array.isArray(event.sub_categories) ? event.sub_categories : String(event.sub_categories).split(",").map(s => s.trim()).filter(Boolean))
+      : [];
+    if (eventSubCategories.length > 0 && !subCategory) {
+      return {
+        ok: false,
+        error: "Please select your team's participation category (" + eventSubCategories.join(", ") + ")."
+      };
     }
 
     // 3. Load Event Source Sheet Students
@@ -468,19 +586,19 @@ function handleRegisterTeam(payload) {
     const captainName = captainRecord.name;
     const captainRoll = captainRecord.roll;
     const captainBranch = captainRecord.branch;
+    const captainRollNorm = normalizeString(captainRoll);
 
     // Rule: In a particular event, a member can be captain of ONE team only
-    if (existingCaptainsInEvent.has(captainEmail)) {
+    if (existingCaptainsInEvent.has(captainEmail) || (captainRollNorm && existingCaptainsInEvent.has(captainRollNorm))) {
       return {
         ok: false,
-        error: `Registration failed: You have already registered a team as captain for this event. A captain can lead only one team per event.`
+        error: `Registration failed: You (${captainName}, Roll: ${captainRoll}) have already registered a team as captain for this event. A captain can lead only one team per event.`
       };
     }
 
     // Rule: No member can participate in multiple teams within the same event
-    const captainRollNorm = normalizeString(captainRoll);
-    if (registeredMembersInEvent[captainRollNorm]) {
-      const existing = registeredMembersInEvent[captainRollNorm];
+    if (registeredMembersInEvent[captainRollNorm] || (captainEmail && registeredMembersInEvent[captainEmail])) {
+      const existing = registeredMembersInEvent[captainRollNorm] || registeredMembersInEvent[captainEmail];
       return {
         ok: false,
         error: `Registration failed: You (${captainName}, Roll: ${captainRoll}) are already participating in team '${existing.teamName}' for this event. A student can participate in only one team per event.`
@@ -601,7 +719,7 @@ function handleRegisterTeam(payload) {
       captainsSheet.appendRow([captainEmail, captainName, hash, salt, createdAt]);
     }
 
-    // 8. Save Team in Teams tab
+    // 8. Save Team in Teams tab (Column 9: sub_category)
     const teamId = "TEAM-" + Utilities.getUuid().substring(0, 8).toUpperCase();
     const nowIso = new Date().toISOString();
     teamsSheet.appendRow([
@@ -612,7 +730,8 @@ function handleRegisterTeam(payload) {
       JSON.stringify(normalizedMembers),
       "Registered",
       nowIso,
-      nowIso
+      nowIso,
+      subCategory
     ]);
 
     // 9. Send Email via MailApp
@@ -624,7 +743,8 @@ function handleRegisterTeam(payload) {
       teamId: teamId,
       members: normalizedMembers,
       isNewCaptain: isNewCaptain,
-      plainPassword: plainPassword
+      plainPassword: plainPassword,
+      subCategory: subCategory
     });
 
     return {
@@ -635,6 +755,7 @@ function handleRegisterTeam(payload) {
         event_name: event.event_name,
         captain_email: captainEmail,
         is_new_captain: isNewCaptain,
+        sub_category: subCategory,
         message: isNewCaptain
           ? "Registered successfully! Your login password has been sent to " + captainEmail + "."
           : "Registered successfully! Confirmation sent to your email. Use your existing password to log in."
@@ -1128,7 +1249,8 @@ function handleAdminGetEvents(payload) {
       min_team_size: parseInt(row[4], 10) || 1,
       max_team_size: parseInt(row[5], 10) || 10,
       deadline: row[6] ? new Date(row[6]).toISOString() : "",
-      is_open: String(row[7]).trim().toUpperCase() === "TRUE"
+      is_open: String(row[7]).trim().toUpperCase() === "TRUE",
+      sub_categories: row[8] ? String(row[8]).trim() : ""
     });
   }
 
@@ -1150,6 +1272,7 @@ function handleAdminSaveEvent(payload) {
   const maxSize = parseInt(payload.max_team_size, 10) || 10;
   const deadline = payload.deadline ? new Date(payload.deadline).toISOString() : new Date().toISOString();
   const isOpen = (payload.is_open === true || String(payload.is_open).toLowerCase() === "true");
+  const subCategoriesRaw = String(payload.sub_categories || "").trim();
 
   if (!eventName) return { ok: false, error: "Event name is required." };
   if (minSize > maxSize) return { ok: false, error: "Min team size cannot exceed max team size." };
@@ -1179,6 +1302,7 @@ function handleAdminSaveEvent(payload) {
     sheet.getRange(existingRow, 6).setValue(maxSize);
     sheet.getRange(existingRow, 7).setValue(deadline);
     sheet.getRange(existingRow, 8).setValue(isOpen ? "TRUE" : "FALSE");
+    sheet.getRange(existingRow, 9).setValue(subCategoriesRaw);
   } else {
     // Add new event
     eventId = "EVT-" + Date.now();
@@ -1190,7 +1314,8 @@ function handleAdminSaveEvent(payload) {
       minSize,
       maxSize,
       deadline,
-      isOpen ? "TRUE" : "FALSE"
+      isOpen ? "TRUE" : "FALSE",
+      subCategoriesRaw
     ]);
   }
 
@@ -1275,7 +1400,8 @@ function handleAdminGetTeams(payload) {
       members_count: members.length,
       status: String(row[5] || "Registered"),
       created_at: row[6] ? new Date(row[6]).toISOString() : "",
-      updated_at: row[7] ? new Date(row[7]).toISOString() : ""
+      updated_at: row[7] ? new Date(row[7]).toISOString() : "",
+      sub_category: String(row[8] || "")
     });
   }
 
@@ -1721,6 +1847,7 @@ function getSourceSheetStudents(sheetIdOrUrl, tabNameOrGid) {
     let roll = colIndices.rollIdx !== -1 ? String(row[colIndices.rollIdx] != null ? row[colIndices.rollIdx] : "").trim() : "";
     let email = colIndices.emailIdx !== -1 ? String(row[colIndices.emailIdx] != null ? row[colIndices.emailIdx] : "").trim() : "";
     let branch = colIndices.branchIdx !== -1 ? String(row[colIndices.branchIdx] != null ? row[colIndices.branchIdx] : "").trim() : "";
+    let participation = colIndices.participationIdx !== -1 ? String(row[colIndices.participationIdx] != null ? row[colIndices.participationIdx] : "").trim() : "";
 
     // Clean up float decimals like 21105128001.0
     if (roll.endsWith(".0")) {
@@ -1732,7 +1859,8 @@ function getSourceSheetStudents(sheetIdOrUrl, tabNameOrGid) {
         name: name || "Participant",
         roll: roll || "",
         email: email || "",
-        branch: branch || "MCE"
+        branch: branch || "MCE",
+        participation: participation || ""
       });
     }
   }
@@ -1748,10 +1876,10 @@ function getSourceSheetStudents(sheetIdOrUrl, tabNameOrGid) {
 }
 
 /**
- * Resolves column positions for Name, Roll No, Email, Branch using flexible keyword matching
+ * Resolves column positions for Name, Roll No, Email, Branch, and Participation/Sub-category
  */
 function resolveColumnIndices(rawHeaders) {
-  const result = { nameIdx: -1, rollIdx: -1, emailIdx: -1, branchIdx: -1 };
+  const result = { nameIdx: -1, rollIdx: -1, emailIdx: -1, branchIdx: -1, participationIdx: -1 };
   const headers = rawHeaders.map(h => normalizeString(h));
 
   for (let i = 0; i < headers.length; i++) {
@@ -1818,16 +1946,29 @@ function resolveColumnIndices(rawHeaders) {
         continue;
       }
     }
+
+    // 5. Participation / Sub-category Choice Match:
+    if (result.participationIdx === -1) {
+      if (
+        h.includes("partcipation") || // matches user's Form header typo "Partcipation"
+        h.includes("participation") ||
+        h.includes("category") ||
+        h.includes("sub-category") ||
+        h.includes("sub_category") ||
+        h.includes("choice") ||
+        h.includes("competition") ||
+        h.includes("preference")
+      ) {
+        result.participationIdx = i;
+        continue;
+      }
+    }
   }
 
   // Fallbacks if not detected by keywords
-  // Typically in Google Forms:
-  // Col 0 = Timestamp
-  // Col 1 = Name or Email
-  // Col 2 = Roll or Email
   if (result.nameIdx === -1) {
     for (let i = 0; i < headers.length; i++) {
-      if (i !== result.rollIdx && i !== result.emailIdx && i !== result.branchIdx && !headers[i].includes("time")) {
+      if (i !== result.rollIdx && i !== result.emailIdx && i !== result.branchIdx && i !== result.participationIdx && !headers[i].includes("time")) {
         result.nameIdx = i;
         break;
       }
@@ -1882,6 +2023,7 @@ function handleAdminInspectSourceSheet(payload) {
         roll_column: mapping.rollIdx !== -1 ? `${sampleHeaders[mapping.rollIdx]} (Col ${mapping.rollIdx + 1})` : "Not Found",
         email_column: mapping.emailIdx !== -1 ? `${sampleHeaders[mapping.emailIdx]} (Col ${mapping.emailIdx + 1})` : "Not Found",
         branch_column: mapping.branchIdx !== -1 ? `${sampleHeaders[mapping.branchIdx]} (Col ${mapping.branchIdx + 1})` : "Not Found",
+        participation_column: mapping.participationIdx !== -1 ? `${sampleHeaders[mapping.participationIdx]} (Col ${mapping.participationIdx + 1})` : "Not Found"
       };
     }
 
@@ -1980,7 +2122,8 @@ function getEventRecord(eventId) {
         min_team_size: parseInt(data[i][4], 10) || 1,
         max_team_size: parseInt(data[i][5], 10) || 10,
         deadline: data[i][6] ? new Date(data[i][6]).toISOString() : null,
-        is_open: isOpenVal === "TRUE" || isOpenVal === "1" || isOpenVal === "YES"
+        is_open: isOpenVal === "TRUE" || isOpenVal === "1" || isOpenVal === "YES",
+        sub_categories: data[i][8] ? String(data[i][8]).trim() : ""
       };
     }
   }
@@ -2179,6 +2322,7 @@ function sendRegistrationEmail(opts) {
           <table style="width:100%;border-collapse:collapse;margin:16px 0;">
             <tr><td style="padding:6px 0;color:#64748b;">Team ID:</td><td style="font-weight:bold;color:#0f172a;">${escapeHtml(opts.teamId)}</td></tr>
             <tr><td style="padding:6px 0;color:#64748b;">Event:</td><td style="font-weight:bold;color:#0f172a;">${escapeHtml(opts.eventName)}</td></tr>
+            ${opts.subCategory ? `<tr><td style="padding:6px 0;color:#64748b;">Participation:</td><td style="font-weight:bold;color:#2563eb;">${escapeHtml(opts.subCategory)}</td></tr>` : ''}
             <tr><td style="padding:6px 0;color:#64748b;">Team Name:</td><td style="font-weight:bold;color:#be123c;">${escapeHtml(opts.teamName)}</td></tr>
             <tr><td style="padding:6px 0;color:#64748b;">Status:</td><td><span style="background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold;">Registered</span></td></tr>
           </table>
